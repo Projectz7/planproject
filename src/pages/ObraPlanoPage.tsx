@@ -19,6 +19,14 @@ import {
 import ProgressoBar from "@/components/plan/ProgressoBar";
 import TarefaFormDialog from "@/components/plan/TarefaFormDialog";
 import KanbanView from "@/components/plan/KanbanView";
+import { TarefaRow } from "@/components/plan/TarefaRow";
+import {
+  DndContext, useSensor, useSensors, PointerSensor, closestCenter,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext, verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
 
 const STATUS_LABEL: Record<string, string> = {
   a_fazer: "A fazer", fazendo: "Fazendo", concluida: "Concluída", bloqueada: "Bloqueada", cancelada: "Cancelada",
@@ -150,6 +158,23 @@ export default function ObraPlanoPage() {
     catch (e) { toast.error((e as Error).message); }
   }
 
+  async function handleReparent(tarefaId: string, novoParentId: string | null, novaOrdem: number) {
+    if (planofechado) return;
+    try {
+      await updateTarefa(tarefaId, { parent_id: novoParentId, ordem: novaOrdem });
+      await recarregarTarefas();
+      toast.success(novoParentId ? "Tarefa movida como sub-tarefa" : "Tarefa movida para a raiz");
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function handleUpdateTarefa(t: Tarefa, patch: Partial<Tarefa>) {
+    if (planofechado) return;
+    try {
+      await updateTarefa(t.id, patch);
+      await recarregarTarefas();
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
   async function handleDelete(t: Tarefa) {
     if (planofechado) return;
     if (!confirm(`Excluir tarefa "${t.titulo}"?`)) return;
@@ -274,7 +299,8 @@ export default function ObraPlanoPage() {
           <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin" /></div>
         ) : view === "tabela" ? (
           <TabelaView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
-            onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)} />
+            onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)}
+            onReparent={handleReparent} onUpdate={handleUpdateTarefa} />
         ) : (
           <KanbanView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onReorder={handleReorderKanban}
@@ -325,115 +351,209 @@ function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
   );
 }
 
-// ---------- Tabela ----------
+// ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit) ----------
 function TabelaView({
-  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub,
+  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onReparent, onUpdate,
 }: {
   tarefas: Tarefa[]; funcs: Funcionario[]; planofechado: boolean;
   onStatus: (t: Tarefa, s: string) => void; onEdit: (t: Tarefa) => void;
   onDelete: (t: Tarefa) => void; onAddSub: (t: Tarefa) => void;
+  onReparent: (tarefaId: string, novoParentId: string | null, novaOrdem: number) => Promise<void>;
+  onUpdate: (t: Tarefa, patch: Partial<Tarefa>) => Promise<void>;
 }) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
-  // ordenar: raízes primeiro, filhas logo após a mãe
   const sorted = useMemo(() => ordernar(tarefas), [tarefas]);
+
+  // mapeia tarefa -> filhas (para saber quais expandir e contar)
+  const filhasMap = useMemo(() => {
+    const m = new Map<string | null, Tarefa[]>();
+    for (const t of sorted) {
+      const k = t.parent_id || null;
+      if (!m.has(k)) m.set(k, []);
+      m.get(k)!.push(t);
+    }
+    return m;
+  }, [sorted]);
+
+  // expandir por default (qualquer tarefa com filhas = true)
+  const [expandidoSet, setExpandidoSet] = useState<Set<string>>(() => {
+    const s = new Set<string>();
+    for (const t of sorted) if (filhasMap.has(t.id)) s.add(t.id);
+    return s;
+  });
+  useEffect(() => {
+    // adiciona automaticamente novas maes
+    setExpandidoSet((prev) => {
+      const novo = new Set(prev);
+      for (const t of sorted) if ((filhasMap.get(t.id)?.length || 0) > 0 && !novo.has(t.id)) novo.add(t.id);
+      return novo;
+    });
+  }, [sorted.length, filhasMap.size]);
+
+  // lista visivel = todas as tarefas, MAS filhos de nodes colapsados sao pulados
+  const visiveis = useMemo(() => {
+    const out: Tarefa[] = [];
+    const walk = (parentId: string | null) => {
+      const filhos = filhasMap.get(parentId) || [];
+      filhos.sort((a, b) => (a.ordem - b.ordem) || (a.created_at!.localeCompare(b.created_at!)));
+      for (const f of filhos) {
+        out.push(f);
+        if (expandidoSet.has(f.id)) walk(f.id);
+      }
+    };
+    walk(null);
+    return out;
+  }, [sorted, filhasMap, expandidoSet]);
+
+  // calcula nivel, ultimoFilho (└ vs ├) e trilha de conectores por tarefa visivel
+  const metadata = useMemo(() => {
+    // primeiro: ancestral comum + nivel
+    const mapa = new Map<string, { nivel: number; trilha: boolean[]; ehUltimaFilha: boolean }>();
+    const fill = (parentId: string | null, nivelAtual: number, trilhaAtual: boolean[]) => {
+      const filhos = (filhasMap.get(parentId) || []).slice();
+      filhos.sort((a, b) => (a.ordem - b.ordem) || (a.created_at!.localeCompare(b.created_at!)));
+      filhos.forEach((f, idx) => {
+        const ehUltima = idx === filhos.length - 1;
+        mapa.set(f.id, {
+          nivel: nivelAtual,
+          trilha: trilhaAtual,
+          ehUltimaFilha: ehUltima,
+        });
+        // para filhos: trilha ganha "true se ancestral ainda tem irmaos abaixo, false caso contrario"
+        const novaTrilha = [...trilhaAtual, !ehUltima];
+        fill(f.id, nivelAtual + 1, novaTrilha);
+      });
+    };
+    fill(null, 0, []);
+    return mapa;
+  }, [filhasMap]);
+
+  const sensor = useSensor(PointerSensor, { activationConstraint: { distance: 5 } });
+  const sensors = useSensors(sensor);
+
+  // estado local p/ reordenar/reparentar instantaneo (sincroniza c/ props onReparent)
+  const [localItems, setLocalItems] = useState<string[]>(visiveis.map((t) => t.id));
+  useEffect(() => { setLocalItems(visiveis.map((t) => t.id)); }, [visiveis.map((t) => t.id).join(",")]);
+
+  // contador colapsados pra mensagens
+  const totalTarefas = sorted.length;
+  const totalVisiveis = visiveis.length;
+  const colapsadas = totalTarefas - totalVisiveis;
+
+  function onDragEnd(e: DragEndEvent) {
+    if (planofechado) return;
+    const { active, over } = e;
+    if (!over) return;
+    if (active.id === over.id) return;
+
+    const activeTarefa = visiveis.find((t) => t.id === active.id);
+    const overTarefa = visiveis.find((t) => t.id === over.id);
+    if (!activeTarefa || !overTarefa) return;
+
+    // Distancia em X (horizontal) do centro do over p/ direita = mais indentacao (filha)
+    // delta.x positivo = arrastou p/ direita
+    const delta = (over.rect.final.left + (over.rect.final.width / 2)) - (active.rect.final.left + (active.rect.final.width / 2));
+    const INDENT = 28; // px equivalente a 1 nivel
+    const offsetX = delta; // simplificado: compara offset
+    // nivel alvo: nivel do over + (offsetX > INDENT/2 ? 1 : 0)
+    // se offsetX > indentMetade => vira filha do over; senao irma (mesmo parent do over)
+    const overNivel = metadata.get(over.id)?.nivel ?? 0;
+    const overParentId = overTarefa.parent_id;
+    const ehFilha = offsetX > (INDENT / 2);
+
+    let novoParentId: string | null;
+    let novaOrdem: number;
+    if (ehFilha) {
+      // vira filho do over
+      novoParentId = over.id;
+      const filhosOver = (filhasMap.get(over.id) || []).filter((t) => t.id !== active.id);
+      novaOrdem = filhosOver.length; // no fim
+    } else {
+      // vira irma do over (mesmo parent)
+      novoParentId = overParentId;
+      const irmaos = (filhasMap.get(overParentId) || []).filter((t) => t.id !== active.id);
+      const idxOver = irmaos.findIndex((t) => t.id === over.id);
+      novaOrdem = idxOver + 1; // coloca logo apos o over
+    }
+
+    // protecao: nao deixa criar ciclo (mover uma mae p/ dentro de sua propria filha)
+    if (novoParentId === active.id) return;
+    let ancestor: string | null = novoParentId;
+    while (ancestor) {
+      if (ancestor === active.id) return; // ciclo detectado
+      const anc = tarefas.find((t) => t.id === ancestor);
+      ancestor = anc?.parent_id ?? null;
+    }
+
+    onReparent(String(active.id), novoParentId, novaOrdem);
+  }
 
   return (
     <Card>
       <CardContent className="p-0 overflow-x-auto">
-        <Table>
-          <TableHeader>
-            <TableRow className="bg-slate-50/80">
-              <TableHead className="text-xs uppercase text-slate-500">Título</TableHead>
-              <TableHead className="text-xs uppercase text-slate-500">Resp.</TableHead>
-              <TableHead className="text-xs uppercase text-slate-500">Status</TableHead>
-              <TableHead className="text-right text-xs uppercase text-slate-500">Início esp.</TableHead>
-              <TableHead className="text-right text-xs uppercase text-slate-500">Fim esp.</TableHead>
-              <TableHead className="text-right text-xs uppercase text-slate-500">Fim real</TableHead>
-              <TableHead className="text-center text-xs uppercase text-slate-500">Δ</TableHead>
-              <TableHead className="text-xs uppercase text-slate-500">Progresso</TableHead>
-              <TableHead className="text-xs uppercase text-slate-500 w-10"></TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sorted.length === 0 ? (
-              <TableRow><TableCell colSpan={9} className="h-32 text-center text-slate-400">
-                Nenhuma tarefa. Clique em "Nova tarefa".
-              </TableCell></TableRow>
-            ) : sorted.map((t) => {
-              const { dias, atrasada } = deltaDias(t);
-              const isSub = !!t.parent_id;
-              return (
-                <TableRow key={t.id} className={isSub ? "bg-slate-50/40" : ""}>
-                  <TableCell className="font-medium">
-                    <div className="flex items-center gap-2" style={isSub ? { paddingLeft: 20 } : {}}>
-                      {isSub && <span className="text-slate-300">↳</span>}
-                      {prioridadeDot(t.prioridade)}
-                      <span>{t.titulo}</span>
-                      {isSub && <Badge variant="outline" className="text-[9px]">sub</Badge>}
-                    </div>
-                  </TableCell>
-                  <TableCell className="text-sm text-slate-600">
-                    {t.responsavel?.nome || funcMap.get(t.responsavel_id || "") || "-"}
-                  </TableCell>
-                  <TableCell>
-                    {planofechado ? (
-                      <Badge variant="outline" className={STATUS_COLOR[t.status]}>{STATUS_LABEL[t.status]}</Badge>
-                    ) : (
-                      <Select value={t.status} onValueChange={(v) => onStatus(t, v)}>
-                        <SelectTrigger className="h-7 text-xs w-32 border-0">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {Object.entries(STATUS_LABEL).map(([k, v]) => (
-                            <SelectItem key={k} value={k}>{v}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right text-sm text-slate-500">{fmtData(t.data_inicio)}</TableCell>
-                  <TableCell className="text-right text-sm text-slate-500">{fmtData(t.data_fim)}</TableCell>
-                  <TableCell className="text-right text-sm">
-                    {t.data_fim_real ? (
-                      <span className="text-slate-700">{fmtData(t.data_fim_real)}</span>
-                    ) : <span className="text-slate-300">-</span>}
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {t.data_fim && t.data_fim_real ? (
-                      <Badge variant="outline" className={atrasada ? "border-rose-200 bg-rose-50 text-rose-600"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-600"}>
-                        {dias > 0 ? `+${dias}d` : dias === 0 ? "✓" : `${dias}d`}
-                      </Badge>
-                    ) : <span className="text-slate-300">-</span>}
-                  </TableCell>
-                  <TableCell>
-                    <ProgressoBar progresso={t.progresso} atrasada={atrasada} />
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-0.5">
-                      {!planofechado && !isSub && (
-                        <button onClick={() => onAddSub(t)} title="Adicionar subtarefa"
-                          className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary">
-                          <Plus className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                      <button onClick={() => onEdit(t)} title="Editar"
-                        className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-primary">
-                        <Pencil className="w-3.5 h-3.5" />
-                      </button>
-                      {!planofechado && (
-                        <button onClick={() => onDelete(t)} title="Excluir"
-                          className="p-1 rounded hover:bg-slate-100 text-slate-400 hover:text-rose-500">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              );
-            })}
-          </TableBody>
-        </Table>
+        <DndContext sensores={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} onDragStart={() => {}}>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-slate-50/80">
+                <TableHead className="text-xs uppercase text-slate-500">Título <span className="normal-case text-slate-400">(arraste p/ definir filha/irmã)</span></TableHead>
+                <TableHead className="text-xs uppercase text-slate-500">Resp.</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500">Status</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500">Início esp.</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500">Fim esp.</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500">Fim real</TableHead>
+                <TableHead className="text-center text-xs uppercase text-slate-500">Δ</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500">Progresso (auto/manual)</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500 w-24">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {visiveis.length === 0 ? (
+                <TableRow><TableCell colSpan={9} className="h-32 text-center text-slate-400">
+                  Nenhuma tarefa. Clique em "Nova tarefa".
+                </TableCell></TableRow>
+              ) : (
+                <SortableContext items={visiveis.map((t) => t.id)} strategy={verticalListSortingStrategy}>
+                  {visiveis.map((t) => {
+                    const meta = metadata.get(t.id);
+                    if (!meta) return null;
+                    return (
+                      <TarefaRow
+                        key={t.id}
+                        tarefa={t}
+                        nivel={meta.nivel}
+                        ehUltimaFilha={meta.ehUltimaFilha}
+                        trilhaConectores={meta.trilha}
+                        funcMap={funcMap}
+                        planofechado={planofechado}
+                        expandido={expandidoSet.has(t.id)}
+                        temFilhas={(filhasMap.get(t.id)?.length || 0)}
+                        onToggleExpand={() => setExpandidoSet((prev) => {
+                          const novo = new Set(prev);
+                          if (novo.has(t.id)) novo.delete(t.id); else novo.add(t.id);
+                          return novo;
+                        })}
+                        onChange={async (patch) => {
+                          const p: Partial<Tarefa> = { ...patch };
+                          if (p.status === "concluida") { p.progresso = 100; if (!t.data_fim_real) p.data_fim_real = new Date().toISOString().split("T")[0]; }
+                          else if (p.status === "fazendo" && !t.data_inicio_real) p.data_inicio_real = new Date().toISOString().split("T")[0];
+                          await onUpdate(t, p);
+                        }}
+                        onAddSub={() => onAddSub(t)}
+                        onEdit={() => onEdit(t)}
+                        onDelete={() => onDelete(t)}
+                      />
+                    );
+                  })}
+                </SortableContext>
+              )}
+            </TableBody>
+          </Table>
+        </DndContext>
+        {colapsadas > 0 && (
+          <div className="px-4 py-1.5 text-[11px] text-slate-400 border-t">
+            {colapsadas} tarefa(s) oculta(s) em nós colapsados · {totalVisiveis} visível(is) de {totalTarefas}
+          </div>
+        )}
       </CardContent>
     </Card>
   );
