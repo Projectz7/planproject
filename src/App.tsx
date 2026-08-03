@@ -1,8 +1,9 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider, useAuth } from "@/context/AuthContext";
 import AccessPage from "@/pages/AccessPage";
 import AccessPageFallback from "@/pages/AccessPageFallback";
 import HomePage from "@/pages/HomePage";
+import ObraPlanoPage from "@/pages/ObraPlanoPage";
 import { Toaster } from "@/components/ui/sonner";
 import { Loader2 } from "lucide-react";
 
@@ -25,6 +26,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/access/:token" element={<AccessPage />} />
+          <Route path="/obra/:obraId" element={<AuthGate><ObraPlanoPage /></AuthGate>} />
           <Route path="*" element={<AuthGate><HomePage /></AuthGate>} />
         </Routes>
         <Toaster richColors position="top-right" />

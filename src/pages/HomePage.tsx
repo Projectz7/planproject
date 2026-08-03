@@ -1,43 +1,61 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/context/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, LogOut, HardHat, Flag } from "lucide-react";
+import { Loader2, LogOut, HardHat, ChevronRight, RefreshCw } from "lucide-react";
+import { toast } from "sonner";
+import type { Obra } from "@/types";
 
-type Obra = {
-  id: string;
-  titulo: string | null;
-  cliente: string | null;
-  status: string | null;
-  endereco: string | null;
-};
+type ObraComPlano = Obra & { planoStatus?: string | null; planoNome?: string | null };
 
 export default function HomePage() {
+  const navigate = useNavigate();
   const { user, funcionario, empresaId, signOut } = useAuth();
   const [empresaNome, setEmpresaNome] = useState<string | null>(null);
-  const [obras, setObras] = useState<Obra[]>([]);
+  const [obras, setObras] = useState<ObraComPlano[]>([]);
   const [loading, setLoading] = useState(true);
-  const [erro, setErro] = useState<string | null>(null);
 
-  useEffect(() => {
-    (async () => {
-      if (!empresaId) return;
-      setLoading(true);
-      const { data: emp } = await supabase
-        .from("empresa").select("nome").eq("id", empresaId).maybeSingle();
+  async function carregar() {
+    if (!empresaId) return;
+    setLoading(true);
+    try {
+      const { data: emp } = await supabase.from("empresa").select("nome").eq("id", empresaId).maybeSingle();
       if (emp) setEmpresaNome(emp.nome as string);
 
-      const { data, error } = await supabase
+      const { data: obrasData, error: eOb } = await supabase
         .from("obras")
-        .select("id, titulo, cliente, status, endereco")
+        .select("id, titulo, cliente, status, endereco, created_at")
         .order("created_at", { ascending: true });
-      if (error) setErro(error.message);
-      else setObras((data || []) as Obra[]);
+      if (eOb) throw eOb;
+
+      // busca último plano por obra (1 query)
+      const { data: planosData } = await supabase
+        .from("planos")
+        .select("id, obra_id, nome, status")
+        .order("created_at", { ascending: false });
+
+      const ultimoPlanoPorObra = new Map<string, { nome: string; status: string }>();
+      for (const p of planosData || []) {
+        if (!ultimoPlanoPorObra.has(p.obra_id as string)) {
+          ultimoPlanoPorObra.set(p.obra_id as string, { nome: p.nome, status: p.status });
+        }
+      }
+      const inj = (obrasData || []).map((o: any) => {
+        const pl = ultimoPlanoPorObra.get(o.id);
+        return { ...o, planoNome: pl?.nome || null, planoStatus: pl?.status || null };
+      });
+      setObras(inj as ObraComPlano[]);
+    } catch (e) {
+      toast.error("Erro ao carregar: " + (e as Error).message);
+    } finally {
       setLoading(false);
-    })();
-  }, [empresaId]);
+    }
+  }
+
+  useEffect(() => { carregar(); }, [empresaId]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-white">
@@ -54,51 +72,60 @@ export default function HomePage() {
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={signOut}><LogOut className="w-4 h-4" /></Button>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="sm" onClick={carregar} title="Recarregar">
+              <RefreshCw className="w-4 h-4" />
+            </Button>
+            <Button variant="outline" size="sm" onClick={signOut} title="Sair">
+              <LogOut className="w-4 h-4" />
+            </Button>
+          </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto p-4 space-y-6">
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-lg">Scaffold F0 - valida\u00e7\u00e3o</CardTitle>
-          </CardHeader>
-          <CardContent className="text-sm space-y-1">
-            <p><span className="text-muted-foreground">empresaId:</span> <code className="text-xs bg-muted px-1.5 py-0.5 rounded">{empresaId || "-"}</code></p>
-            <p><span className="text-muted-foreground">Auth:</span> {funcionario ? "funcionário (token)" : "dono (supabase auth)"}</p>
-            <p><span className="text-muted-foreground">Projeto Supabase:</span> p7store (pnijzmqygibhwbcnkklm)</p>
-            {erro && <p className="text-destructive">Erro obras: {erro}</p>}
-          </CardContent>
-        </Card>
+      <main className="max-w-6xl mx-auto p-4 space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold">Obras <span className="text-xs text-muted-foreground font-normal">(lidas do schema do di-gest)</span></h2>
+          <Badge variant="secondary">{obras.length}</Badge>
+        </div>
 
-        <div>
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">Obras <span className="text-xs text-muted-foreground font-normal">(lidas do schema do di-gest)</span></h2>
-            <Badge variant="secondary">{obras.length} obras</Badge>
-          </div>
-          {loading ? (
-            <div className="py-10 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
-          ) : obras.length === 0 ? (
-            <Card><CardContent className="py-10 text-center text-muted-foreground">
-              <Flag className="w-8 h-8 mx-auto mb-2 opacity-30" />
-              <p>Nenhuma obra encontrada.</p>
-              <p className="text-xs mt-1">Verifique se a empresa tem obras cadastradas no di-gest.</p>
-            </CardContent></Card>
-          ) : (
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-              {obras.map((o) => (
-                <Card key={o.id} className="hover:shadow-md transition-shadow">
+        {loading ? (
+          <div className="py-16 flex justify-center"><Loader2 className="w-6 h-6 animate-spin text-muted-foreground" /></div>
+        ) : obras.length === 0 ? (
+          <Card><CardContent className="py-12 text-center text-muted-foreground">
+            <HardHat className="w-8 h-8 mx-auto mb-2 opacity-30" />
+            <p>Nenhuma obra nesta empresa.</p>
+            <p className="text-xs mt-1">Cadastre obras no di-gest/P7Store para começar a planejar.</p>
+          </CardContent></Card>
+        ) : (
+          <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
+            {obras.map((o) => (
+              <button key={o.id} onClick={() => navigate(`/obra/${o.id}`)}
+                className="text-left">
+                <Card className="hover:shadow-md hover:border-primary/30 transition-all h-full">
                   <CardContent className="p-4">
-                    <p className="font-semibold text-sm">{o.titulo || "(sem t\u00edtulo)"}</p>
-                    <p className="text-xs text-muted-foreground mt-0.5">{o.cliente || "-"}</p>
-                    {o.status && <Badge variant="outline" className="mt-2 text-[10px]">{o.status}</Badge>}
+                    <div className="flex items-start justify-between gap-2">
+                      <p className="font-semibold text-sm leading-tight">{o.titulo || "(sem título)"}</p>
+                      <ChevronRight className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1">{o.cliente || "-"}</p>
+                    <div className="flex items-center gap-1 mt-2 flex-wrap">
+                      {o.status && <Badge variant="outline" className="text-[10px]">{o.status}</Badge>}
+                      {o.planoNome ? (
+                        <Badge className="text-[10px] bg-blue-50 text-blue-700 border-blue-200" variant="outline">
+                          {o.planoStatus === "fechado" ? "🔒 " : ""}{o.planoNome}
+                        </Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-[10px] text-slate-400 border-dashed">sem plano</Badge>
+                      )}
+                    </div>
                     {o.endereco && <p className="text-[11px] text-muted-foreground mt-2 truncate">{o.endereco}</p>}
                   </CardContent>
                 </Card>
-              ))}
-            </div>
-          )}
-        </div>
+              </button>
+            ))}
+          </div>
+        )}
       </main>
     </div>
   );
