@@ -18,6 +18,7 @@ import {
 } from "@/lib/supabaseService";
 import ProgressoBar from "@/components/plan/ProgressoBar";
 import TarefaFormDialog from "@/components/plan/TarefaFormDialog";
+import KanbanView from "@/components/plan/KanbanView";
 
 const STATUS_LABEL: Record<string, string> = {
   a_fazer: "A fazer", fazendo: "Fazendo", concluida: "Concluída", bloqueada: "Bloqueada", cancelada: "Cancelada",
@@ -133,6 +134,20 @@ export default function ObraPlanoPage() {
       await updateTarefa(t.id, patch);
       await recarregarTarefas();
     } catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function handleReorderKanban(tarefaId: string, novoStatus: string, novaOrdem: number) {
+    if (planofechado) return;
+    const t = tarefas.find((x) => x.id === tarefaId);
+    const patch: Partial<Tarefa> = { status: novoStatus as Tarefa["status"], ordem: novaOrdem };
+    if (t && novoStatus === "concluida" && t.status !== "concluida") {
+      patch.progresso = 100;
+      if (!t.data_fim_real) patch.data_fim_real = new Date().toISOString().split("T")[0];
+    } else if (t && novoStatus === "fazendo" && t.status !== "fazendo" && !t.data_inicio_real) {
+      patch.data_inicio_real = new Date().toISOString().split("T")[0];
+    }
+    try { await updateTarefa(tarefaId, patch); }
+    catch (e) { toast.error((e as Error).message); }
   }
 
   async function handleDelete(t: Tarefa) {
@@ -261,9 +276,9 @@ export default function ObraPlanoPage() {
           <TabelaView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)} />
         ) : (
-          <div className="text-center text-muted-foreground py-12 border-2 border-dashed rounded-xl">
-            <p className="text-sm">Kanban - F3 (próxima fase)</p>
-          </div>
+          <KanbanView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
+            onStatus={handleStatusInline} onReorder={handleReorderKanban}
+            onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)} />
         )}
       </main>
 
