@@ -1,5 +1,5 @@
 -- ============================================================
--- PlanProject - progresso hierárquico (no banco)
+-- PlanSeven - progresso hierárquico (no banco)
 -- Peso por duração esperada (dias); sem datas => peso 1
 -- ============================================================
 

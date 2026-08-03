@@ -66,7 +66,7 @@ export default function HomePage() {
               <HardHat className="w-5 h-5 text-primary-foreground" />
             </div>
             <div>
-              <h1 className="text-base font-bold leading-none">PlanProject</h1>
+              <h1 className="text-base font-bold leading-none">PlanSeven</h1>
               <p className="text-[11px] text-muted-foreground leading-none mt-0.5">
                 {empresaNome || "-"} · {funcionario ? `Func: ${funcionario.nome}` : (user?.email || "Dono")}
               </p>

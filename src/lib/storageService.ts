@@ -1,4 +1,4 @@
-// Wrapper de storage - localStorage puro (sem Capacitor no MVP do PlanProject).
+// Wrapper de storage - localStorage puro (sem Capacitor no MVP do PlanSeven).
 export const storage = {
   async get<T = string>(key: string): Promise<T | null> {
     const raw = localStorage.getItem(key);

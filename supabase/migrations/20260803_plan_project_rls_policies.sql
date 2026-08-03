@@ -1,5 +1,5 @@
 -- ============================================================
--- PlanProject - RLS (reutiliza get_empresa_id_from_email())
+-- PlanSeven - RLS (reutiliza get_empresa_id_from_email())
 -- ============================================================
 
 ALTER TABLE public.planos        ENABLE ROW LEVEL SECURITY;

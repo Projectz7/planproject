@@ -8,9 +8,9 @@ export default function AccessPageFallback() {
         <div className="w-14 h-14 rounded-xl bg-primary flex items-center justify-center mx-auto">
           <HardHat className="w-8 h-8 text-primary-foreground" />
         </div>
-        <h1 className="text-2xl font-bold">PlanProject</h1>
+        <h1 className="text-2xl font-bold">PlanSeven</h1>
         <p className="text-sm text-muted-foreground">
-          Acesso exclusivo via <strong>P7Store</strong>. Entre na sua conta em P7Store e selecione PlanProject no catálogo de apps.
+          Acesso exclusivo via <strong>P7Store</strong>. Entre na sua conta em P7Store e selecione PlanSeven no catálogo de apps.
         </p>
         <a href="https://project-store-nu.vercel.app/" target="_blank" rel="noreferrer"
            className="inline-flex items-center gap-2 text-sm text-primary hover:underline">

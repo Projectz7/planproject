@@ -1,5 +1,5 @@
 -- ============================================================
--- PlanProject - tabelas de planos, tarefas e diário de obra
+-- PlanSeven - tabelas de planos, tarefas e diário de obra
 -- (mesmo projeto p7store; lê obras/funcionarios do di-gest)
 -- Migration aplicada via Supabase studio/MCP em 2026-08-03
 -- ============================================================
