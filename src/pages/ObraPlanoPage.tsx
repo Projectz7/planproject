@@ -27,6 +27,7 @@ import {
 import {
   SortableContext, verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
+import { GamepadControle, type GamepadAcao } from "@/components/plan/GamepadControle";
 
 const STATUS_LABEL: Record<string, string> = {
   a_fazer: "A fazer", fazendo: "Fazendo", concluida: "Concluída", bloqueada: "Bloqueada", cancelada: "Cancelada",
@@ -63,6 +64,7 @@ export default function ObraPlanoPage() {
   const [editando, setEditando] = useState<Tarefa | null>(null);
   const [parentIdDialog, setParentIdDialog] = useState<string | null>(null);
   const [focoInlineId, setFocoInlineId] = useState<string | null>(null);
+  const [tarefaSelecionadaId, setTarefaSelecionadaId] = useState<string | null>(null);
 
   const planoAtivo = useMemo(() => planos.find((p) => p.id === planoAtivoId) || null, [planos, planoAtivoId]);
   const planofechado = planoAtivo?.status === "fechado";
@@ -258,13 +260,54 @@ export default function ObraPlanoPage() {
     if (!t) return { cima: false, baixo: false, esquerda: false, direita: false };
     const irmaos = tarefas.filter((x) => x.parent_id === t.parent_id).sort((a, b) => a.ordem - b.ordem);
     const idx = irmaos.findIndex((x) => x.id === tarefaId);
-    // para direita (rebaixar): precisa ter irma anterior (nao necessariamente visivel)
     return {
       cima: idx > 0,
       baixo: idx < irmaos.length - 1,
       esquerda: !!t.parent_id,
       direita: idx > 0,
     };
+  }
+
+  async function handleGamepadAction(acao: GamepadAcao) {
+    if (planofechado) return;
+    switch (acao) {
+      case "toggle_selecionar": {
+        if (tarefaSelecionadaId) setTarefaSelecionadaId(null);
+        else {
+          const visiveis = ordernar(tarefas);
+          if (visiveis.length > 0) setTarefaSelecionadaId(visiveis[0].id);
+          else toast.info("Nenhuma tarefa para selecionar");
+        }
+        break;
+      }
+      case "cima":
+      case "baixo":
+        if (tarefaSelecionadaId) await handleMoverVertical(tarefaSelecionadaId, acao);
+        break;
+      case "esquerda":
+        if (tarefaSelecionadaId) await handleMudarNivel(tarefaSelecionadaId, "promover");
+        break;
+      case "direita":
+        if (tarefaSelecionadaId) await handleMudarNivel(tarefaSelecionadaId, "rebaixar");
+        break;
+      case "adicionar":
+        setTarefaSelecionadaId(null);
+        await abrirNova(null);
+        break;
+      case "editar":
+        if (tarefaSelecionadaId) {
+          setFocoInlineId(tarefaSelecionadaId);
+          setTimeout(() => setFocoInlineId(null), 3000);
+        }
+        break;
+      case "excluir":
+        if (tarefaSelecionadaId) {
+          const t = tarefas.find((x) => x.id === tarefaSelecionadaId);
+          if (t) await handleDelete(t);
+          setTarefaSelecionadaId(null);
+        }
+        break;
+    }
   }
 
   async function handleUpdateTarefa(t: Tarefa, patch: Partial<Tarefa>) {
@@ -420,13 +463,21 @@ export default function ObraPlanoPage() {
             onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)}
             onDrop={handleDrop} onUpdate={handleUpdateTarefa}
             onMudarNivel={handleMudarNivel} onMoverVertical={handleMoverVertical} podeMover={podeMover}
-            focoInlineId={focoInlineId} />
+            focoInlineId={focoInlineId} selecionadaId={tarefaSelecionadaId} onSelecionar={(id) => setTarefaSelecionadaId(id)} />
         ) : (
           <KanbanView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onReorder={handleReorderKanban}
             onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)} />
         )}
       </main>
+
+      {view === "tabela" && !planofechado && planoAtivoId && (
+        <GamepadControle
+          onAcao={handleGamepadAction}
+          tarefaSelecionada={!!tarefaSelecionadaId}
+          podeMover={tarefaSelecionadaId ? podeMover(tarefaSelecionadaId) : { cima: false, baixo: false, esquerda: false, direita: false }}
+        />
+      )}
 
       <TarefaFormDialog
         open={dialogOpen}
@@ -473,7 +524,7 @@ function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
 
 // ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit + joystick) ----------
 function TabelaView({
-  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId,
+  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId, selecionadaId, onSelecionar,
 }: {
   tarefas: Tarefa[]; funcs: Funcionario[]; planofechado: boolean;
   onStatus: (t: Tarefa, s: string) => void; onEdit: (t: Tarefa) => void;
@@ -489,6 +540,8 @@ function TabelaView({
   onMoverVertical: (tarefaId: string, direcao: "cima" | "baixo") => Promise<void>;
   podeMover: (tarefaId: string) => { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean };
   focoInlineId: string | null;
+  selecionadaId: string | null;
+  onSelecionar: (id: string | null) => void;
 }) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
   const sorted = useMemo(() => ordernar(tarefas), [tarefas]);
@@ -716,6 +769,8 @@ function TabelaView({
                         temFilhas={(filhasMap.get(t.id)?.length || 0)}
                         focoInlineTitulo={focoInlineId === t.id}
                         podeMover={podeMover(t.id)}
+                        selecionada={selecionadaId === t.id}
+                        onSelecionar={() => onSelecionar(selecionadaId === t.id ? null : t.id)}
                         onToggleExpand={() => setExpandidoSet((prev) => {
                           const novo = new Set(prev);
                           if (novo.has(t.id)) novo.delete(t.id); else novo.add(t.id);

@@ -51,6 +51,8 @@ export interface TarefaRowProps {
   temFilhas: number;
   focoInlineTitulo?: boolean;
   podeMover: { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean };
+  selecionada?: boolean;
+  onSelecionar?: () => void;
   onChange: (patch: Partial<Tarefa>) => Promise<void>;
   onPromote?: () => void;
   onDemote?: () => void;
@@ -65,6 +67,7 @@ export interface TarefaRowProps {
 export function TarefaRow({
   tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap,
   planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo, podeMover,
+  selecionada, onSelecionar,
   onChange, onPromote, onDemote, onMoverCima, onMoverBaixo, onAddSub, onEdit, onDelete, isOverlay,
 }: TarefaRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -145,7 +148,14 @@ export function TarefaRow({
         nivel > 0 && "bg-slate-50/40",
         t.status === "concluida" && "opacity-70",
         isOverlay && "shadow-2xl ring-2 ring-primary/40",
+        selecionada && "ring-2 ring-blue-500 bg-blue-50/60",
       )}
+      onClick={(e) => {
+        if (isOverlay) return;
+        const target = e.target as HTMLElement;
+        if (target.closest("button, input, select, [role='button'], [data-no-select]")) return;
+        onSelecionar?.();
+      }}
     >
       <TableCell className="font-medium py-1.5">
         <div className="flex items-center gap-1 group">
@@ -162,6 +172,7 @@ export function TarefaRow({
               disabled={planofechado}
               className="font-medium"
               autoFocus={focoInlineTitulo}
+              forcarEdicao={focoInlineTitulo}
             />
           </InlineGraph>
           {temFilhas ? (

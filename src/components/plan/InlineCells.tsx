@@ -29,8 +29,8 @@ function useEditState(inicial: any) {
 
 // ----- InlineText -----
 export function InlineText({
-  valor, onSalvar, onNext, disabled, className, placeholder = "vazio", autoFocus,
-}: BaseProps & { placeholder?: string; autoFocus?: boolean }) {
+  valor, onSalvar, onNext, disabled, className, placeholder = "vazio", autoFocus, forcarEdicao,
+}: BaseProps & { placeholder?: string; autoFocus?: boolean; forcarEdicao?: boolean }) {
   const { editando, setEditando, draft, setDraft, inputRef } = useEditState(valor ?? "");
   const [salvando, setSalvando] = useState(false);
 
@@ -38,6 +38,11 @@ export function InlineText({
   useEffect(() => {
     if (autoFocus) setEditando(true);
   }, [autoFocus]);
+
+  // forcarEdicao: reativo - dispara edição sempre que muda pra true (botão "Editar" do gamepad)
+  useEffect(() => {
+    if (forcarEdicao) setEditando(true);
+  }, [forcarEdicao]);
 
   async function commit() {
     if (draft === valor) { setEditando(false); return; }
