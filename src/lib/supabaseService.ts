@@ -92,3 +92,13 @@ export async function deleteTarefa(id: string): Promise<void> {
   const { error } = await supabase.from("plano_tarefas").delete().eq("id", id);
   if (error) throw error;
 }
+
+export async function reagruparFilhas(parentAntigo: string | null, ordemLimite: number, novoParent: string): Promise<number> {
+  const { data, error } = await supabase.rpc("reagrupar_filhas", {
+    p_parent_antigo: parentAntigo,
+    p_ordem_limite: ordemLimite,
+    p_novo_parent: novoParent,
+  });
+  if (error) throw error;
+  return (data as number) ?? 0;
+}

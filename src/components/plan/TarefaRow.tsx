@@ -3,7 +3,7 @@ import { CSS } from "@dnd-kit/utilities";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { GripVertical, Plus, ChevronDown, ChevronRight, Pencil, Trash2 } from "lucide-react";
+import { GripVertical, Plus, ChevronDown, ChevronRight, ChevronLeft, Pencil, Trash2 } from "lucide-react";
 import type { Tarefa, Funcionario, StatusTarefa, Prioridade } from "@/types";
 import { InlineText, InlineDate, InlineSelect, InlineProgress } from "./InlineCells";
 import { cn } from "@/lib/utils";
@@ -41,14 +41,17 @@ function deltaDias(t: Tarefa): { dias: number; atrasada: boolean } {
 export interface TarefaRowProps {
   tarefa: Tarefa;
   nivel: number;
-  ehUltimaFilha: boolean;          // para desenhar ├ ou └
-  trilhaConectores: boolean[];     // [true, false, true] -> niveis ancestrais a desenhar linha vertical
+  ehUltimaFilha: boolean;
+  trilhaConectores: boolean[];
   funcMap: Map<string, string>;
   planofechado: boolean;
   expandido: boolean;
   onToggleExpand: () => void;
-  temFilhas: number;   // qtd de filhas diretas (0 = nao tem)
+  temFilhas: number;
+  focoInlineTitulo?: boolean;
   onChange: (patch: Partial<Tarefa>) => Promise<void>;
+  onPromote?: () => void;
+  onDemote?: () => void;
   onAddSub: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -57,8 +60,8 @@ export interface TarefaRowProps {
 
 export function TarefaRow({
   tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap,
-  planofechado, expandido, onToggleExpand, temFilhas,
-  onChange, onAddSub, onEdit, onDelete, isOverlay,
+  planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo,
+  onChange, onPromote, onDemote, onAddSub, onEdit, onDelete, isOverlay,
 }: TarefaRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: t.id,
@@ -112,6 +115,32 @@ export function TarefaRow({
     </button>
   ) : <span className="w-[18px]" />;
 
+  const botoesNivel = !planofechado && (onPromote || onDemote) ? (
+    <span className="flex items-center opacity-0 hover:opacity-100 transition-opacity group-hover:opacity-100">
+      {onPromote && (
+        <button
+          type="button"
+          onClick={onPromote}
+          disabled={nivel === 0}
+          className="p-0.5 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed"
+          title="Promover (subir 1 nível)"
+        >
+          <ChevronLeft className="w-3 h-3" />
+        </button>
+      )}
+      {onDemote && (
+        <button
+          type="button"
+          onClick={onDemote}
+          className="p-0.5 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-600"
+          title="Rebaixar (virar sub-tarefa da irmã anterior)"
+        >
+          <ChevronRight className="w-3 h-3" />
+        </button>
+      )}
+    </span>
+  ) : null;
+
   const saveField = (campo: keyof Tarefa) => async (v: any) => {
     await onChange({ [campo]: v } as Partial<Tarefa>);
   };
@@ -127,25 +156,27 @@ export function TarefaRow({
       )}
     >
       <TableCell className="font-medium py-1.5">
-        <div className="flex items-center gap-1">
+        <div className="flex items-center gap-1 group">
           {handle}
           {expandIcon}
+          {botoesNivel}
           {nivel > 0 && <span className="flex items-center text-xs mr-0.5">{conectores}</span>}
           <span className={cn("inline-block w-2 h-2 rounded-full", PRIO_COLOR[t.prioridade])}
             title={`Prioridade ${PRIO_LABEL[t.prioridade]}`} />
-          <InlineGraph tipo="texto" className="min-w-[200px]">
+          <InlineGraph tipo="texto" className={cn("min-w-[200px]", focoInlineTitulo && "ring-2 ring-primary/50 rounded")}>
             <InlineText
               valor={t.titulo}
               onSalvar={saveField("titulo")}
               disabled={planofechado}
               className="font-medium"
+              autoFocus={focoInlineTitulo}
             />
           </InlineGraph>
-          {temFilhas && (
+          {temFilhas ? (
             <Badge variant="outline" className="text-[9px] ml-1" title="Tem subtarefas">
               {temFilhas}
             </Badge>
-          )}
+          ) : null}
         </div>
       </TableCell>
 

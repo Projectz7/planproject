@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import type { Obra, Funcionario, Plano, Tarefa, StatusPlano } from "@/types";
 import {
   fetchObra, fetchFuncionarios, fetchPlanosByObra, createPlano, updatePlanoStatus,
-  fetchTarefasByPlano, updateTarefa, deleteTarefa,
+  fetchTarefasByPlano, updateTarefa, deleteTarefa, createTarefa, reagruparFilhas,
 } from "@/lib/supabaseService";
 import ProgressoBar from "@/components/plan/ProgressoBar";
 import TarefaFormDialog from "@/components/plan/TarefaFormDialog";
@@ -62,6 +62,7 @@ export default function ObraPlanoPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editando, setEditando] = useState<Tarefa | null>(null);
   const [parentIdDialog, setParentIdDialog] = useState<string | null>(null);
+  const [focoInlineId, setFocoInlineId] = useState<string | null>(null);
 
   const planoAtivo = useMemo(() => planos.find((p) => p.id === planoAtivoId) || null, [planos, planoAtivoId]);
   const planofechado = planoAtivo?.status === "fechado";
@@ -167,6 +168,63 @@ export default function ObraPlanoPage() {
     } catch (e) { toast.error((e as Error).message); }
   }
 
+  async function handleDrop(
+    tarefaId: string,
+    novoParentId: string | null,
+    novaOrdem: number,
+    virarMaeDe: { overId: string; overParentId: string | null; overOrdem: number } | null
+  ) {
+    if (planofechado) return;
+    const t = tarefas.find((x) => x.id === tarefaId);
+    if (!t) return;
+    try {
+      const patch: Partial<Tarefa> = { parent_id: novoParentId, ordem: novaOrdem };
+      if (t.parent_id !== novoParentId) {
+        patch.status = t.status;
+      }
+      await updateTarefa(tarefaId, patch);
+      if (virarMaeDe) {
+        // arrastada vira mae: move filhas do parent antigo (>= ordem da over) para baixo da arrastada
+        const afetadas = await reagruparFilhas(virarMaeDe.overParentId, virarMaeDe.overOrdem, tarefaId);
+        if (afetadas > 0) toast.success(`Tarefa virou mãe de ${afetadas} tarefa(s)`);
+        else toast.success("Tarefa reposicionada");
+      } else {
+        toast.success(novoParentId ? "Tarefa movida" : "Tarefa movida para a raiz");
+      }
+      await recarregarTarefas();
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
+  async function handleMudarNivel(tarefaId: string, direcao: "promover" | "rebaixar") {
+    if (planofechado) return;
+    const t = tarefas.find((x) => x.id === tarefaId);
+    if (!t) return;
+    if (direcao === "promover" && !t.parent_id) { toast.error("Já está na raiz"); return; }
+    try {
+      if (direcao === "promover") {
+        // subir 1 nivel: vira irma da mae (logo apos ela)
+        const mae = tarefas.find((x) => x.id === t.parent_id);
+        if (!mae) return;
+        const irmaosDaMae = tarefas.filter((x) => x.parent_id === mae.parent_id).sort((a, b) => a.ordem - b.ordem);
+        const idxMae = irmaosDaMae.findIndex((x) => x.id === mae.id);
+        const novaOrdem = idxMae + 1;
+        await updateTarefa(tarefaId, { parent_id: mae.parent_id, ordem: novaOrdem });
+      } else {
+        // rebaixar: vira filha da irma anterior (imediato acima no mesmo nivel)
+        const irmaos = tarefas
+          .filter((x) => x.parent_id === t.parent_id && x.id !== t.id)
+          .sort((a, b) => a.ordem - b.ordem);
+        const idxT = [...irmaos, t].sort((a, b) => a.ordem - b.ordem).findIndex((x) => x.id === t.id);
+        const irmaAnterior = irmaos[idxT - 1];
+        if (!irmaAnterior) { toast.error("Sem irmã anterior para rebaixar"); return; }
+        const filhosIrma = tarefas.filter((x) => x.parent_id === irmaAnterior.id);
+        await updateTarefa(tarefaId, { parent_id: irmaAnterior.id, ordem: filhosIrma.length });
+      }
+      await recarregarTarefas();
+      toast.success(direcao === "promover" ? "Promovida (subiu 1 nível)" : "Rebaixada (virou sub-tarefa)");
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
   async function handleUpdateTarefa(t: Tarefa, patch: Partial<Tarefa>) {
     if (planofechado) return;
     try {
@@ -182,10 +240,28 @@ export default function ObraPlanoPage() {
     catch (e) { toast.error((e as Error).message); }
   }
 
-  function abrirNova(parentId: string | null = null) {
+  async function abrirNova(parentId: string | null = null) {
     if (planofechado) { toast.error("Plano fechado - criar bloqueado"); return; }
     if (!planoAtivoId) { toast.error("Selecione/crie um plano primeiro"); return; }
-    setEditando(null); setParentIdDialog(parentId); setDialogOpen(true);
+    // Cria tarefa "Sem título" direto no banco e abre inline-edit do título
+    try {
+      const irmaos = tarefas.filter((t) => t.parent_id === parentId).sort((a, b) => a.ordem - b.ordem);
+      const novaOrdem = irmaos.length;
+      const nova = await createTarefa({
+        plano_id: planoAtivoId,
+        titulo: "Sem título",
+        status: "a_fazer",
+        prioridade: "media",
+        responsavel_id: null,
+        parent_id: parentId,
+        ordem: novaOrdem,
+        progresso: 0,
+        progresso_manual: false,
+      } as any);
+      await recarregarTarefas();
+      setFocoInlineId(nova.id);
+      setTimeout(() => setFocoInlineId(null), 3000); // fallback: limpa foco se usuário não edita
+    } catch (e) { toast.error((e as Error).message); }
   }
   function abrirEditar(t: Tarefa) {
     setEditando(t); setParentIdDialog(null); setDialogOpen(true);
@@ -300,7 +376,7 @@ export default function ObraPlanoPage() {
         ) : view === "tabela" ? (
           <TabelaView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)}
-            onReparent={handleReparent} onUpdate={handleUpdateTarefa} />
+            onDrop={handleDrop} onUpdate={handleUpdateTarefa} onMudarNivel={handleMudarNivel} focoInlineId={focoInlineId} />
         ) : (
           <KanbanView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onReorder={handleReorderKanban}
@@ -353,13 +429,20 @@ function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
 
 // ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit) ----------
 function TabelaView({
-  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onReparent, onUpdate,
+  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, focoInlineId,
 }: {
   tarefas: Tarefa[]; funcs: Funcionario[]; planofechado: boolean;
   onStatus: (t: Tarefa, s: string) => void; onEdit: (t: Tarefa) => void;
   onDelete: (t: Tarefa) => void; onAddSub: (t: Tarefa) => void;
-  onReparent: (tarefaId: string, novoParentId: string | null, novaOrdem: number) => Promise<void>;
+  onDrop: (
+    tarefaId: string,
+    novoParentId: string | null,
+    novaOrdem: number,
+    virarMaeDe: { overId: string; overParentId: string | null; overOrdem: number } | null
+  ) => Promise<void>;
   onUpdate: (t: Tarefa, patch: Partial<Tarefa>) => Promise<void>;
+  onMudarNivel: (tarefaId: string, direcao: "promover" | "rebaixar") => Promise<void>;
+  focoInlineId: string | null;
 }) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
   const sorted = useMemo(() => ordernar(tarefas), [tarefas]);
@@ -442,7 +525,7 @@ function TabelaView({
 
   function onDragEnd(e: DragEndEvent) {
     if (planofechado) return;
-    const { active, over } = e;
+    const { active, over, delta } = e;
     if (!over) return;
     if (active.id === over.id) return;
 
@@ -450,42 +533,100 @@ function TabelaView({
     const overTarefa = visiveis.find((t) => t.id === over.id);
     if (!activeTarefa || !overTarefa) return;
 
-    // Distancia em X (horizontal) do centro do over p/ direita = mais indentacao (filha)
-    // delta.x positivo = arrastou p/ direita
-    const delta = (over.rect.final.left + (over.rect.final.width / 2)) - (active.rect.final.left + (active.rect.final.width / 2));
-    const INDENT = 28; // px equivalente a 1 nivel
-    const offsetX = delta; // simplificado: compara offset
-    // nivel alvo: nivel do over + (offsetX > INDENT/2 ? 1 : 0)
-    // se offsetX > indentMetade => vira filha do over; senao irma (mesmo parent do over)
-    const overNivel = metadata.get(over.id)?.nivel ?? 0;
-    const overParentId = overTarefa.parent_id;
-    const ehFilha = offsetX > (INDENT / 2);
+    const INDENT = 28;
+    const activeMeta = metadata.get(active.id);
+    const overMeta = metadata.get(over.id);
+    if (!activeMeta || !overMeta) return;
+    const nivelActive = activeMeta.nivel;
+    const nivelOver = overMeta.nivel;
 
+    // nivel alvo = nivel original + deslocamento horizontal arredondado (clamped 0..nivelMaxVisivel)
+    const nivelMax = visiveis.reduce((m, t) => Math.max(m, metadata.get(t.id)?.nivel ?? 0), 0);
+    const nivelAlvo = Math.max(0, Math.min(nivelMax, nivelActive + Math.round(delta.x / INDENT)));
+
+    // detecta "acima do over" = soltou na metade superior da linha over (~ delta.y < 0 forte)
+    const alturaLinha = over.rect.final.height || 36;
+    const acimaDoOver = delta.y < 0 && Math.abs(delta.y) > alturaLinha * 0.4;
+
+    // protecao ciclo: novoParentId nao pode ser active nem descendente
+    function ehDescendente(id: string, ancestralId: string): boolean {
+      let cur: string | null = ancestralId;
+      while (cur) {
+        if (cur === id) return true;
+        const anc = tarefas.find((t) => t.id === cur);
+        cur = anc?.parent_id ?? null;
+      }
+      return false;
+    }
+    function irmaosDe(parentId: string | null): Tarefa[] {
+      return (filhasMap.get(parentId) || []).filter((t) => t.id !== active.id);
+    }
+    function ultimoNivelVisivelAte(idLimite: string, nivel: number): Tarefa | null {
+      // ultima tarefa no nivel `nivel` que aparece antes de idLimite na lista visiveis
+      const idx = visiveis.findIndex((t) => t.id === idLimite);
+      for (let i = idx - 1; i >= 0; i--) {
+        const t = visiveis[i];
+        if ((metadata.get(t.id)?.nivel ?? 0) === nivel) return t;
+      }
+      return null;
+    }
+
+    const overParentId = overTarefa.parent_id;
     let novoParentId: string | null;
     let novaOrdem: number;
-    if (ehFilha) {
-      // vira filho do over
-      novoParentId = over.id;
-      const filhosOver = (filhasMap.get(over.id) || []).filter((t) => t.id !== active.id);
-      novaOrdem = filhosOver.length; // no fim
-    } else {
-      // vira irma do over (mesmo parent)
+    let virarMaeDe: { overId: string; overParentId: string | null; overOrdem: number } | null = null;
+
+    // CASO A: vira MAE da over (soltar acima e nivelAlvo = nivelOver - 1 OU nivelAlvo < nivelOver)
+    // = re-agrupar: arrastada vira pai de over e suas irmas subsequentes (mesmo parent antigo, ordem >= over.ordem)
+    if (acimaDoOver && nivelAlvo < nivelOver) {
+      const novoPai = (nivelAlvo === 0) ? null
+        : (ultimoNivelVisivelAte(over.id, nivelAlvo - 1)?.id ?? null);
+      if (ehDescendente(active.id, novoPai ?? "")) return;
+      novoParentId = novoPai;
+      // ordem dentro do novo pai: posicao onde a arrastada deve ficar (no nivelAlvo, antes de over)
+      const irmaosNivelAlvo = irmaosDe(novoPai);
+      const idxInserir = irmaosNivelAlvo.findIndex((t) => t.id === overTarefa.parent_id);
+      novaOrdem = idxInserir === -1 ? irmaosNivelAlvo.length : idxInserir;
+      virarMaeDe = {
+        overId: over.id,
+        overParentId: overParentId,
+        overOrdem: overTarefa.ordem,
+      };
+    }
+    // CASO B: rebaixar (nivelAlvo > nivelOver OU nivelAlvo = nivelOver + 1)
+    else if (nivelAlvo > nivelOver) {
+      // novo pai = tarefa no nivel `nivelAlvo - 1` imediatamente acima do over (ancestral visivel)
+      const novaMae = ultimoNivelVisivelAte(over.id, nivelAlvo - 1);
+      if (!novaMae) return;
+      if (ehDescendente(active.id, novaMae.id)) return;
+      novoParentId = novaMae.id;
+      // ao rebaixar vira filha no fim da lista de filhos do novaMae
+      const filhosNovoPai = irmaosDe(novaMae.id);
+      // se novaMae = over, coloca no inicio (antes das filhas atuais); senao no fim
+      novaOrdem = novaMae.id === over.id ? 0 : filhosNovoPai.length;
+    }
+    // CASO C: irma no mesmo nivel do over (nivelAlvo === nivelOver e mesmo parent)
+    else if (nivelAlvo === nivelOver) {
       novoParentId = overParentId;
-      const irmaos = (filhasMap.get(overParentId) || []).filter((t) => t.id !== active.id);
+      if (ehDescendente(active.id, novoParentId ?? "")) return;
+      const irmaos = irmaosDe(overParentId);
       const idxOver = irmaos.findIndex((t) => t.id === over.id);
-      novaOrdem = idxOver + 1; // coloca logo apos o over
+      if (idxOver === -1) return;
+      novaOrdem = acimaDoOver ? idxOver : idxOver + 1;
+    }
+    // CASO D: promover (nivelAlvo < nivelOver, mas nao virou mae: soltou abaixo)
+    else {
+      // subir: novo parent tem nivel = nivelAlvo - 1; buscar irma ancestral com parent_id do nivel.
+      // Simpler: o novo parent_id eh o irmao no nivel `nivelAlvo` mais proximo a cima do over.
+      const irmaNoNivel = ultimoNivelVisivelAte(over.id, nivelAlvo);
+      novoParentId = irmaNoNivel ? (irmaNoNivel.parent_id) : null;
+      if (ehDescendente(active.id, novoParentId ?? "")) return;
+      const irmaos = irmaosDe(novoParentId);
+      novaOrdem = irmaNoNivel ? irmaos.findIndex((t) => t.id === irmaNoNivel.id) + 1 : irmaos.length;
+      if (novaOrdem < 0) novaOrdem = irmaos.length;
     }
 
-    // protecao: nao deixa criar ciclo (mover uma mae p/ dentro de sua propria filha)
-    if (novoParentId === active.id) return;
-    let ancestor: string | null = novoParentId;
-    while (ancestor) {
-      if (ancestor === active.id) return; // ciclo detectado
-      const anc = tarefas.find((t) => t.id === ancestor);
-      ancestor = anc?.parent_id ?? null;
-    }
-
-    onReparent(String(active.id), novoParentId, novaOrdem);
+    onDrop(String(active.id), novoParentId, novaOrdem, virarMaeDe);
   }
 
   return (
@@ -527,6 +668,7 @@ function TabelaView({
                         planofechado={planofechado}
                         expandido={expandidoSet.has(t.id)}
                         temFilhas={(filhasMap.get(t.id)?.length || 0)}
+                        focoInlineTitulo={focoInlineId === t.id}
                         onToggleExpand={() => setExpandidoSet((prev) => {
                           const novo = new Set(prev);
                           if (novo.has(t.id)) novo.delete(t.id); else novo.add(t.id);
@@ -538,6 +680,8 @@ function TabelaView({
                           else if (p.status === "fazendo" && !t.data_inicio_real) p.data_inicio_real = new Date().toISOString().split("T")[0];
                           await onUpdate(t, p);
                         }}
+                        onPromote={() => onMudarNivel(t.id, "promover")}
+                        onDemote={() => onMudarNivel(t.id, "rebaixar")}
                         onAddSub={() => onAddSub(t)}
                         onEdit={() => onEdit(t)}
                         onDelete={() => onDelete(t)}

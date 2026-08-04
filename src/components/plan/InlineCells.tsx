@@ -29,10 +29,15 @@ function useEditState(inicial: any) {
 
 // ----- InlineText -----
 export function InlineText({
-  valor, onSalvar, onNext, disabled, className, placeholder = "vazio",
-}: BaseProps & { placeholder?: string }) {
+  valor, onSalvar, onNext, disabled, className, placeholder = "vazio", autoFocus,
+}: BaseProps & { placeholder?: string; autoFocus?: boolean }) {
   const { editando, setEditando, draft, setDraft, inputRef } = useEditState(valor ?? "");
   const [salvando, setSalvando] = useState(false);
+
+  // autoFocus: abre modo edição automaticamente ao montar
+  useEffect(() => {
+    if (autoFocus) setEditando(true);
+  }, [autoFocus]);
 
   async function commit() {
     if (draft === valor) { setEditando(false); return; }
