@@ -225,6 +225,48 @@ export default function ObraPlanoPage() {
     } catch (e) { toast.error((e as Error).message); }
   }
 
+  async function handleMoverVertical(tarefaId: string, direcao: "cima" | "baixo") {
+    if (planofechado) return;
+    const t = tarefas.find((x) => x.id === tarefaId);
+    if (!t) return;
+    const irmaos = tarefas
+      .filter((x) => x.parent_id === t.parent_id)
+      .sort((a, b) => a.ordem - b.ordem);
+    const idx = irmaos.findIndex((x) => x.id === tarefaId);
+    if (idx === -1) return;
+    try {
+      if (direcao === "cima") {
+        if (idx === 0) { toast.error("Já é a primeira"); return; }
+        const alvo = irmaos[idx - 1];
+        // trocar posicoes: t vira ordem do alvo, alvo vira ordem do t
+        const ordemT = t.ordem;
+        await updateTarefa(alvo.id, { ordem: ordemT });
+        await updateTarefa(tarefaId, { ordem: alvo.ordem });
+      } else {
+        if (idx === irmaos.length - 1) { toast.error("Já é a última"); return; }
+        const alvo = irmaos[idx + 1];
+        const ordemT = t.ordem;
+        await updateTarefa(alvo.id, { ordem: ordemT });
+        await updateTarefa(tarefaId, { ordem: alvo.ordem });
+      }
+      await recarregarTarefas();
+    } catch (e) { toast.error((e as Error).message); }
+  }
+
+  function podeMover(tarefaId: string): { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean } {
+    const t = tarefas.find((x) => x.id === tarefaId);
+    if (!t) return { cima: false, baixo: false, esquerda: false, direita: false };
+    const irmaos = tarefas.filter((x) => x.parent_id === t.parent_id).sort((a, b) => a.ordem - b.ordem);
+    const idx = irmaos.findIndex((x) => x.id === tarefaId);
+    // para direita (rebaixar): precisa ter irma anterior (nao necessariamente visivel)
+    return {
+      cima: idx > 0,
+      baixo: idx < irmaos.length - 1,
+      esquerda: !!t.parent_id,
+      direita: idx > 0,
+    };
+  }
+
   async function handleUpdateTarefa(t: Tarefa, patch: Partial<Tarefa>) {
     if (planofechado) return;
     try {
@@ -376,7 +418,9 @@ export default function ObraPlanoPage() {
         ) : view === "tabela" ? (
           <TabelaView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)}
-            onDrop={handleDrop} onUpdate={handleUpdateTarefa} onMudarNivel={handleMudarNivel} focoInlineId={focoInlineId} />
+            onDrop={handleDrop} onUpdate={handleUpdateTarefa}
+            onMudarNivel={handleMudarNivel} onMoverVertical={handleMoverVertical} podeMover={podeMover}
+            focoInlineId={focoInlineId} />
         ) : (
           <KanbanView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
             onStatus={handleStatusInline} onReorder={handleReorderKanban}
@@ -427,9 +471,9 @@ function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
   );
 }
 
-// ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit) ----------
+// ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit + joystick) ----------
 function TabelaView({
-  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, focoInlineId,
+  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId,
 }: {
   tarefas: Tarefa[]; funcs: Funcionario[]; planofechado: boolean;
   onStatus: (t: Tarefa, s: string) => void; onEdit: (t: Tarefa) => void;
@@ -442,6 +486,8 @@ function TabelaView({
   ) => Promise<void>;
   onUpdate: (t: Tarefa, patch: Partial<Tarefa>) => Promise<void>;
   onMudarNivel: (tarefaId: string, direcao: "promover" | "rebaixar") => Promise<void>;
+  onMoverVertical: (tarefaId: string, direcao: "cima" | "baixo") => Promise<void>;
+  podeMover: (tarefaId: string) => { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean };
   focoInlineId: string | null;
 }) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
@@ -632,7 +678,7 @@ function TabelaView({
   return (
     <Card>
       <CardContent className="p-0 overflow-x-auto">
-        <DndContext sensores={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} onDragStart={() => {}}>
+        <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={onDragEnd} onDragStart={() => {}}>
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50/80">
@@ -669,6 +715,7 @@ function TabelaView({
                         expandido={expandidoSet.has(t.id)}
                         temFilhas={(filhasMap.get(t.id)?.length || 0)}
                         focoInlineTitulo={focoInlineId === t.id}
+                        podeMover={podeMover(t.id)}
                         onToggleExpand={() => setExpandidoSet((prev) => {
                           const novo = new Set(prev);
                           if (novo.has(t.id)) novo.delete(t.id); else novo.add(t.id);
@@ -682,6 +729,8 @@ function TabelaView({
                         }}
                         onPromote={() => onMudarNivel(t.id, "promover")}
                         onDemote={() => onMudarNivel(t.id, "rebaixar")}
+                        onMoverCima={() => onMoverVertical(t.id, "cima")}
+                        onMoverBaixo={() => onMoverVertical(t.id, "baixo")}
                         onAddSub={() => onAddSub(t)}
                         onEdit={() => onEdit(t)}
                         onDelete={() => onDelete(t)}

@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, Plus, ChevronDown, ChevronRight, ChevronLeft, Pencil, Trash2 } from "lucide-react";
 import type { Tarefa, Funcionario, StatusTarefa, Prioridade } from "@/types";
 import { InlineText, InlineDate, InlineSelect, InlineProgress } from "./InlineCells";
+import { JoystickMover } from "./JoystickMover";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<StatusTarefa, string> = {
@@ -49,9 +50,12 @@ export interface TarefaRowProps {
   onToggleExpand: () => void;
   temFilhas: number;
   focoInlineTitulo?: boolean;
+  podeMover: { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean };
   onChange: (patch: Partial<Tarefa>) => Promise<void>;
   onPromote?: () => void;
   onDemote?: () => void;
+  onMoverCima?: () => void;
+  onMoverBaixo?: () => void;
   onAddSub: () => void;
   onEdit: () => void;
   onDelete: () => void;
@@ -60,8 +64,8 @@ export interface TarefaRowProps {
 
 export function TarefaRow({
   tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap,
-  planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo,
-  onChange, onPromote, onDemote, onAddSub, onEdit, onDelete, isOverlay,
+  planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo, podeMover,
+  onChange, onPromote, onDemote, onMoverCima, onMoverBaixo, onAddSub, onEdit, onDelete, isOverlay,
 }: TarefaRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: t.id,
@@ -115,30 +119,18 @@ export function TarefaRow({
     </button>
   ) : <span className="w-[18px]" />;
 
-  const botoesNivel = !planofechado && (onPromote || onDemote) ? (
-    <span className="flex items-center opacity-0 hover:opacity-100 transition-opacity group-hover:opacity-100">
-      {onPromote && (
-        <button
-          type="button"
-          onClick={onPromote}
-          disabled={nivel === 0}
-          className="p-0.5 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-600 disabled:opacity-30 disabled:cursor-not-allowed"
-          title="Promover (subir 1 nível)"
-        >
-          <ChevronLeft className="w-3 h-3" />
-        </button>
-      )}
-      {onDemote && (
-        <button
-          type="button"
-          onClick={onDemote}
-          className="p-0.5 rounded hover:bg-slate-100 text-slate-300 hover:text-slate-600"
-          title="Rebaixar (virar sub-tarefa da irmã anterior)"
-        >
-          <ChevronRight className="w-3 h-3" />
-        </button>
-      )}
-    </span>
+  const joystick = !planofechado && (onPromote || onDemote || onMoverCima || onMoverBaixo) ? (
+    <JoystickMover
+      onCima={() => onMoverCima?.()}
+      onBaixo={() => onMoverBaixo?.()}
+      onEsquerda={() => onPromote?.()}
+      onDireita={() => onDemote?.()}
+      podeCima={podeMover.cima}
+      podeBaixo={podeMover.baixo}
+      podeEsquerda={podeMover.esquerda}
+      podeDireita={podeMover.direita}
+      className="opacity-0 group-hover:opacity-100 transition-opacity"
+    />
   ) : null;
 
   const saveField = (campo: keyof Tarefa) => async (v: any) => {
@@ -159,7 +151,7 @@ export function TarefaRow({
         <div className="flex items-center gap-1 group">
           {handle}
           {expandIcon}
-          {botoesNivel}
+          {joystick}
           {nivel > 0 && <span className="flex items-center text-xs mr-0.5">{conectores}</span>}
           <span className={cn("inline-block w-2 h-2 rounded-full", PRIO_COLOR[t.prioridade])}
             title={`Prioridade ${PRIO_LABEL[t.prioridade]}`} />
