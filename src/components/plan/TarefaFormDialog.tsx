@@ -8,8 +8,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import type { Tarefa, Prioridade, Funcionario } from "@/types";
-import { createTarefa, updateTarefa } from "@/lib/supabaseService";
+import type { Tarefa, Prioridade, Funcionario, Equipe } from "@/types";
+import { createTarefa, updateTarefa, fetchEquipes } from "@/lib/supabaseService";
 
 interface Props {
   open: boolean;
@@ -32,7 +32,10 @@ export default function TarefaFormDialog({
   const [titulo, setTitulo] = useState("");
   const [descricao, setDescricao] = useState("");
   const [responsavelId, setResponsavelId] = useState<string>("");
+  const [equipeId, setEquipeId] = useState<string>("");
+  const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [prioridade, setPrioridade] = useState<Prioridade>("media");
+  const [pesoTarefa, setPesoTarefa] = useState<number>(1);
   const [dataInicio, setDataInicio] = useState<string>("");
   const [dataFim, setDataFim] = useState<string>("");
   const [dataInicioReal, setDataInicioReal] = useState<string>("");
@@ -43,11 +46,18 @@ export default function TarefaFormDialog({
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
+    if (!open) return;
+    fetchEquipes().then(setEquipes).catch(() => {});
+  }, [open]);
+
+  useEffect(() => {
     if (editando) {
       setTitulo(editando.titulo);
       setDescricao(editando.descricao || "");
       setResponsavelId(editando.responsavel_id || "");
+      setEquipeId((editando as any).equipe_id || "");
       setPrioridade(editando.prioridade);
+      setPesoTarefa(editando.peso_tarefa ?? 1);
       setDataInicio(editando.data_inicio || "");
       setDataFim(editando.data_fim || "");
       setDataInicioReal(editando.data_inicio_real || "");
@@ -56,7 +66,8 @@ export default function TarefaFormDialog({
       setProgressoManual(editando.progresso_manual);
       setStatus(editando.status);
     } else {
-      setTitulo(""); setDescricao(""); setResponsavelId(""); setPrioridade("media");
+      setTitulo(""); setDescricao(""); setResponsavelId(""); setEquipeId(""); setPrioridade("media");
+      setPesoTarefa(1);
       setDataInicio(""); setDataFim(""); setDataInicioReal(""); setDataFimReal("");
       setProgresso(0); setProgressoManual(false); setStatus("a_fazer");
     }
@@ -73,7 +84,9 @@ export default function TarefaFormDialog({
         titulo: titulo.trim(),
         descricao: descricao.trim() || null,
         responsavel_id: responsavelId || null,
+        equipe_id: equipeId || null,
         prioridade,
+        peso_tarefa: pesoTarefa,
         data_inicio: dataInicio || null,
         data_fim: dataFim || null,
         data_inicio_real: dataInicioReal || null,
@@ -127,25 +140,43 @@ export default function TarefaFormDialog({
                 <SelectTrigger><SelectValue placeholder="Sem responsável" /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="none">Sem responsável</SelectItem>
-                  {funcionarios.map((f) => <SelectItem key={f.id} value={f.id}>{f.nome}</SelectItem>)}
+                  {funcionarios.map((f) => <SelectItem key={f.id} value={f.id}>{f.nome}{Number(f.custo_diario ?? 0) > 0 ? ` · R$ ${f.custo_diario}/dia` : ""}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
             <div className="grid gap-1.5">
-              <Label>Prioridade</Label>
-              <Select value={prioridade} onValueChange={(v) => setPrioridade(v as Prioridade)}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Label>Equipe</Label>
+              <Select value={equipeId || "none"} onValueChange={(v) => setEquipeId(v === "none" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Sem equipe" /></SelectTrigger>
                 <SelectContent>
-                  {PRIORIDADES.map((p) => <SelectItem key={p} value={p} className="capitalize">{p}</SelectItem>)}
+                  <SelectItem value="none">Sem equipe</SelectItem>
+                  {equipes.map((eq) => <SelectItem key={eq.id} value={eq.id}>{eq.nome}</SelectItem>)}
                 </SelectContent>
               </Select>
             </div>
           </div>
+          {(() => {
+            let custoDiario = 0;
+            let base = "";
+            if (responsavelId) {
+              const f = funcionarios.find((x) => x.id === responsavelId);
+              if (f) { custoDiario = Number(f.custo_diario ?? 0); base = f.nome.split(" ")[0]; }
+            } else if (equipeId) {
+              custoDiario = funcionarios.filter((f) => f.equipe_id === equipeId).reduce((s, f) => s + (Number(f.custo_diario) || 0), 0);
+              base = "equipe";
+            }
+            const total = custoDiario * Math.max(1, pesoTarefa);
+            if (custoDiario > 0)
+              return <p className="text-xs text-emerald-700 font-medium">Custo MO: R$ {custoDiario.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia × {pesoTarefa}d = <strong>R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong> ({base})</p>;
+            if (responsavelId || equipeId)
+              return <p className="text-xs text-amber-600">Custo MO: R$ 0/dia — defina a diária no P7Store</p>;
+            return null;
+          })()}
 
           {/* ESPERADO */}
           <div className="rounded-lg border border-slate-200 p-3 space-y-2">
             <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide">Esperado</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-3">
               <div className="grid gap-1.5">
                 <Label className="text-xs">Início previsto</Label>
                 <Input type="date" value={dataInicio} onChange={(e) => setDataInicio(e.target.value)} />
@@ -153,6 +184,10 @@ export default function TarefaFormDialog({
               <div className="grid gap-1.5">
                 <Label className="text-xs">Vencimento previsto</Label>
                 <Input type="date" value={dataFim} onChange={(e) => setDataFim(e.target.value)} />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs">Dias (peso/duração)</Label>
+                <Input type="number" min={1} value={pesoTarefa} onChange={(e) => setPesoTarefa(Math.max(1, Number(e.target.value) || 1))} />
               </div>
             </div>
           </div>

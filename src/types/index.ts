@@ -66,6 +66,7 @@ export interface Tarefa {
   data_fim_real: string | null;
   progresso_manual: boolean;
   progresso: number;
+  peso_tarefa?: number;
   observacao?: string | null;
   created_at?: string;
   updated_at?: string;

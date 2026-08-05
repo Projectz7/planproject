@@ -51,10 +51,12 @@ export function calcularCustoDiarioTarefa(
   t: Pick<Tarefa, "responsavel_id" | "equipe_id">,
   funcionarios: Funcionario[],
 ): number {
+  // Responsável setado: usa somente o custo dele (mesmo se 0 = sem custo)
   if (t.responsavel_id) {
     const resp = funcionarios.find((f) => f.id === t.responsavel_id);
-    if (resp && Number(resp.custo_diario ?? 0) > 0) return Number(resp.custo_diario);
+    if (resp) return Number(resp.custo_diario ?? 0);
   }
+  // Sem responsável, mas com equipe: soma custo diário dos membros
   if (t.equipe_id) {
     const soma = funcionarios
       .filter((f) => f.equipe_id === t.equipe_id)
@@ -70,7 +72,7 @@ export function calcularCustoTarefa(
   funcionarios: Funcionario[],
 ): number {
   const diario = calcularCustoDiarioTarefa(t, funcionarios);
-  const dias = Number((t as any).peso_tarefa ?? 1) || 1;
+  const dias = Number(t.peso_tarefa ?? 1) || 1;
   return diario * Math.max(1, dias);
 }
 
