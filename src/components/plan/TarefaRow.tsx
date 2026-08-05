@@ -183,20 +183,22 @@ export function TarefaRow({
         </div>
       </TableCell>
 
-      <TableCell className="py-1.5">
-        <InlineGraph tipo="texto">
-          <InlineText
-            valor={resp ?? ""}
-            placeholder="-"
-            onSalvar={async (v) => {
-              // Responsavel e FK; por simplicidade salva nome texto e marca responsavel_id=null
-              // Para vincular a funcionario real, usa o dialog (lapis) — aqui so visual
-              await onChange({ descricao: v } as any);
-            }}
-            disabled={planofechado}
-            className="min-w-[80px]"
-          />
-        </InlineGraph>
+      <TableCell className="py-1.5 w-24">
+        <div className="flex items-center gap-0.5">
+          {!planofechado && (
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onAddSub} title="Adicionar subtarefa">
+              <Plus className="w-3.5 h-3.5" />
+            </Button>
+          )}
+          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onEdit} title="Editar (dialog completo)">
+            <Pencil className="w-3.5 h-3.5" />
+          </Button>
+          {!planofechado && (
+            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500" onClick={onDelete} title="Excluir">
+              <Trash2 className="w-3.5 h-3.5" />
+            </Button>
+          )}
+        </div>
       </TableCell>
 
       <TableCell className="py-1.5">
@@ -211,25 +213,39 @@ export function TarefaRow({
         />
       </TableCell>
 
-      <TableCell className="py-1.5 text-right">
+      <TableCell className="py-1.5 hidden md:table-cell">
+        <InlineGraph tipo="texto">
+          <InlineText
+            valor={resp ?? ""}
+            placeholder="-"
+            onSalvar={async (v) => {
+              await onChange({ descricao: v } as any);
+            }}
+            disabled={planofechado}
+            className="min-w-[80px]"
+          />
+        </InlineGraph>
+      </TableCell>
+
+      <TableCell className="py-1.5 text-right hidden md:table-cell">
         <InlineGraph tipo="date">
           <InlineDate valor={t.data_inicio} onSalvar={saveField("data_inicio")} disabled={planofechado} />
         </InlineGraph>
       </TableCell>
 
-      <TableCell className="py-1.5 text-right">
+      <TableCell className="py-1.5 text-right hidden md:table-cell">
         <InlineGraph tipo="date">
           <InlineDate valor={t.data_fim} onSalvar={saveField("data_fim")} disabled={planofechado} />
         </InlineGraph>
       </TableCell>
 
-      <TableCell className="py-1.5 text-right">
+      <TableCell className="py-1.5 text-right hidden lg:table-cell">
         <InlineGraph tipo="date">
           <InlineDate valor={t.data_fim_real} onSalvar={saveField("data_fim_real")} disabled={planofechado} />
         </InlineGraph>
       </TableCell>
 
-      <TableCell className="py-1.5 text-center">
+      <TableCell className="py-1.5 text-center hidden lg:table-cell">
         {t.data_fim && t.data_fim_real ? (
           <Badge variant="outline" className={cn(
             "text-[10px]",
@@ -241,7 +257,7 @@ export function TarefaRow({
         ) : <span className="text-slate-300">-</span>}
       </TableCell>
 
-      <TableCell className="py-1.5">
+      <TableCell className="py-1.5 hidden md:table-cell">
         <div className="flex items-center justify-between gap-1">
           <InlineProgress
             valor={t.progresso}
@@ -260,24 +276,6 @@ export function TarefaRow({
             disabled={planofechado || !temFilhas}
             className="w-[68px]"
           />
-        </div>
-      </TableCell>
-
-      <TableCell className="py-1.5 w-24">
-        <div className="flex items-center gap-0.5">
-          {!planofechado && (
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onAddSub} title="Adicionar subtarefa">
-              <Plus className="w-3.5 h-3.5" />
-            </Button>
-          )}
-          <Button variant="ghost" size="sm" className="h-7 w-7 p-0" onClick={onEdit} title="Editar (dialog completo)">
-            <Pencil className="w-3.5 h-3.5" />
-          </Button>
-          {!planofechado && (
-            <Button variant="ghost" size="sm" className="h-7 w-7 p-0 text-rose-500" onClick={onDelete} title="Excluir">
-              <Trash2 className="w-3.5 h-3.5" />
-            </Button>
-          )}
         </div>
       </TableCell>
     </TableRow>

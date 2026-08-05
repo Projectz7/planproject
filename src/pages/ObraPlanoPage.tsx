@@ -366,8 +366,8 @@ export default function ObraPlanoPage() {
       <div className="min-h-screen flex items-center justify-center">
         <Card><CardContent className="py-10 text-center text-muted-foreground">
           <Flag className="w-8 h-8 mx-auto mb-2 opacity-30" />
-          <p>Obra não encontrada.</p>
-          <Button variant="link" onClick={() => navigate("/")}>Voltar</Button>
+          <p>Projeto não encontrado.</p>
+          <Button variant="link" onClick={() => { window.location.href = "https://p7store.vercel.app"; }}>Voltar</Button>
         </CardContent></Card>
       </div>
     );
@@ -379,8 +379,9 @@ export default function ObraPlanoPage() {
       <header className="border-b bg-white/80 backdrop-blur sticky top-0 z-10">
         <div className="max-w-7xl mx-auto px-4 py-3">
           <div className="flex items-center gap-3">
-            <Button variant="ghost" size="sm" onClick={() => navigate("/")}>
-              <ArrowLeft className="w-4 h-4" /> Obras
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")}
+              title="Voltar para projetos no PlanSeven">
+              <ArrowLeft className="w-4 h-4" /> Projetos
             </Button>
             <div className="flex-1">
               <h1 className="text-lg font-bold leading-none">{obra.titulo || "(sem título)"}</h1>
@@ -392,7 +393,7 @@ export default function ObraPlanoPage() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto p-4 space-y-4">
+      <main className="max-w-7xl mx-auto p-4 space-y-4 pb-32 md:pb-4">
         {/* Seletor de plano + ações */}
         <div className="flex flex-wrap items-center gap-2">
           <Select value={planoAtivoId || ""} onValueChange={setPlanoAtivoId} disabled={planos.length === 0}>
@@ -737,15 +738,15 @@ function TabelaView({
           <Table>
             <TableHeader>
               <TableRow className="bg-slate-50/80">
-                <TableHead className="text-xs uppercase text-slate-500">Título <span className="normal-case text-slate-400">(arraste p/ definir filha/irmã)</span></TableHead>
-                <TableHead className="text-xs uppercase text-slate-500">Resp.</TableHead>
-                <TableHead className="text-xs uppercase text-slate-500">Status</TableHead>
-                <TableHead className="text-right text-xs uppercase text-slate-500">Início esp.</TableHead>
-                <TableHead className="text-right text-xs uppercase text-slate-500">Fim esp.</TableHead>
-                <TableHead className="text-right text-xs uppercase text-slate-500">Fim real</TableHead>
-                <TableHead className="text-center text-xs uppercase text-slate-500">Δ</TableHead>
-                <TableHead className="text-xs uppercase text-slate-500">Progresso (auto/manual)</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500">Título <span className="normal-case text-slate-400 hidden md:inline">(arraste p/ definir filha/irmã)</span></TableHead>
                 <TableHead className="text-xs uppercase text-slate-500 w-24">Ações</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500">Status</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500 hidden md:table-cell">Resp.</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500 hidden md:table-cell">Início esp.</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500 hidden md:table-cell">Fim esp.</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500 hidden lg:table-cell">Fim real</TableHead>
+                <TableHead className="text-center text-xs uppercase text-slate-500 hidden lg:table-cell">Δ</TableHead>
+                <TableHead className="text-xs uppercase text-slate-500 hidden md:table-cell">Progresso</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>

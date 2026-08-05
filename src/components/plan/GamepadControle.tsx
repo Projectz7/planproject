@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { MousePointerClick, Plus, Pencil, Trash2, CheckCircle2 } from "lucide-react";
 import { AnalogicoPS, type Direcao } from "./AnalogicoPS";
 import { cn } from "@/lib/utils";
@@ -57,11 +58,37 @@ export function GamepadControle({
   onAcao, tarefaSelecionada, podeMover, className,
 }: GamepadControleProps) {
   const analogicoDisabled = !tarefaSelecionada;
+  const [tecladoVisivel, setTecladoVisivel] = useState(false);
+
+  // some ao digitar: detecta focus em input/textarea/select
+  useEffect(() => {
+    const onFocusIn = (e: FocusEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") {
+        setTecladoVisivel(true);
+      }
+    };
+    const onFocusOut = (e: FocusEvent) => {
+      const t = e.target as HTMLElement;
+      if (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT") {
+        setTecladoVisivel(false);
+      }
+    };
+    document.addEventListener("focusin", onFocusIn);
+    document.addEventListener("focusout", onFocusOut);
+    return () => {
+      document.removeEventListener("focusin", onFocusIn);
+      document.removeEventListener("focusout", onFocusOut);
+    };
+  }, []);
+
+  if (tecladoVisivel) return null;
 
   return (
     <div className={cn(
+      "fixed bottom-2 left-1/2 -translate-x-1/2 z-50",
+      "md:bottom-4 md:left-auto md:right-4 md:translate-x-0",
       "flex items-end gap-4 p-3 rounded-2xl bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700",
-      "md:fixed md:bottom-4 md:right-4 md:z-50",
       className,
     )}>
       <AnalogicoPS

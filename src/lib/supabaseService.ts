@@ -102,3 +102,30 @@ export async function reagruparFilhas(parentAntigo: string | null, ordemLimite: 
   if (error) throw error;
   return (data as number) ?? 0;
 }
+
+export async function createObra(titulo: string, empresaId: string): Promise<string> {
+  const { data, error } = await supabase
+    .from("obras")
+    .insert({ titulo, empresa_id: empresaId, status: "pendente" })
+    .select("id")
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+export async function fetchTudo(empresaId: string): Promise<(Tarefa & { obra_titulo: string })[]> {
+  const { data, error } = await supabase
+    .from("plano_tarefas")
+    .select(`
+      *,
+      obras:obra_id ( titulo )
+    `)
+    .eq("empresa_id", empresaId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data || []).map((t: any) => ({
+    ...t,
+    responsavel: t.responsavel_id ? { id: t.responsavel_id, nome: "" } : null,
+    obra_titulo: t.obras?.titulo || "(sem projeto)",
+  })) as (Tarefa & { obra_titulo: string })[];
+}

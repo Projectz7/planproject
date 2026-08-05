@@ -4,6 +4,7 @@ import AccessPage from "@/pages/AccessPage";
 import AccessPageFallback from "@/pages/AccessPageFallback";
 import HomePage from "@/pages/HomePage";
 import ObraPlanoPage from "@/pages/ObraPlanoPage";
+import TudoPage from "@/pages/TudoPage";
 import { Toaster } from "@/components/ui/sonner";
 import { Loader2 } from "lucide-react";
 
@@ -26,6 +27,7 @@ export default function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/access/:token" element={<AccessPage />} />
+          <Route path="/tudo" element={<AuthGate><TudoPage /></AuthGate>} />
           <Route path="/obra/:obraId" element={<AuthGate><ObraPlanoPage /></AuthGate>} />
           <Route path="*" element={<AuthGate><HomePage /></AuthGate>} />
         </Routes>
