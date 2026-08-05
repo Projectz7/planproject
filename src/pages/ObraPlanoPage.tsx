@@ -328,11 +328,13 @@ export default function ObraPlanoPage() {
   async function abrirNova(parentId: string | null = null) {
     if (planofechado) { toast.error("Plano fechado - criar bloqueado"); return; }
     if (!planoAtivoId) { toast.error("Selecione/crie um plano primeiro"); return; }
-    // Cria tarefa "Sem título" direto no banco e abre inline-edit do título
+    if (!empresaId || !obraId) { toast.error("Contexto de empresa/obra ausente"); return; }
     try {
       const irmaos = tarefas.filter((t) => t.parent_id === parentId).sort((a, b) => a.ordem - b.ordem);
       const novaOrdem = irmaos.length;
       const nova = await createTarefa({
+        empresa_id: empresaId,
+        obra_id: obraId,
         plano_id: planoAtivoId,
         titulo: "Sem título",
         status: "a_fazer",
@@ -342,10 +344,10 @@ export default function ObraPlanoPage() {
         ordem: novaOrdem,
         progresso: 0,
         progresso_manual: false,
-      } as any);
+      });
       await recarregarTarefas();
       setFocoInlineId(nova.id);
-      setTimeout(() => setFocoInlineId(null), 3000); // fallback: limpa foco se usuário não edita
+      setTimeout(() => setFocoInlineId(null), 3000);
     } catch (e) { toast.error((e as Error).message); }
   }
   function abrirEditar(t: Tarefa) {
