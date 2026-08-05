@@ -15,6 +15,7 @@ import type { Obra, Funcionario, Plano, Tarefa, StatusPlano } from "@/types";
 import {
   fetchObra, fetchFuncionarios, fetchPlanosByObra, createPlano, updatePlanoStatus,
   fetchTarefasByPlano, updateTarefa, deleteTarefa, createTarefa, reagruparFilhas,
+  calcularCustoTarefa,
 } from "@/lib/supabaseService";
 import ProgressoBar from "@/components/plan/ProgressoBar";
 import TarefaFormDialog from "@/components/plan/TarefaFormDialog";
@@ -449,7 +450,7 @@ export default function ObraPlanoPage() {
 
         {/* ProgressBar do plano */}
         {planoAtivo && tarefas.length > 0 && (
-          <PlanoProgressBar tarefas={tarefas} />
+          <PlanoProgressBar tarefas={tarefas} funcs={funcionarios} />
         )}
 
         {/* View */}
@@ -498,8 +499,8 @@ export default function ObraPlanoPage() {
   );
 }
 
-// ---------- ProgressBar do plano (média ponderada nas raízes) ----------
-function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
+// ---------- ProgressBar do plano (média ponderada nas raízes) + Custo MO total ----------
+function PlanoProgressBar({ tarefas, funcs }: { tarefas: Tarefa[]; funcs: Funcionario[] }) {
   const pls = tarefas.filter((t) => !t.parent_id);
   let somaP = 0, somaW = 0;
   for (const t of pls) {
@@ -512,6 +513,7 @@ function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
     somaW += w;
   }
   const pct = somaW > 0 ? Math.round(somaP / somaW) : 0;
+  const custoTotal = tarefas.reduce((acc, t) => acc + calcularCustoTarefa(t, funcs), 0);
   return (
     <Card className="border-slate-200">
       <CardContent className="p-3 flex items-center gap-3">
@@ -519,6 +521,14 @@ function PlanoProgressBar({ tarefas }: { tarefas: Tarefa[] }) {
         <div className="flex-1">
           <p className="text-xs text-muted-foreground">Progresso do plano ({pls.length} tarefas raiz)</p>
           <ProgressoBar progresso={pct} size="md" className="mt-1.5" />
+        </div>
+        <div className="text-right shrink-0">
+          <p className="text-[10px] text-muted-foreground uppercase tracking-wide">Custo MO total</p>
+          <p className={`text-base font-bold tabular-nums ${custoTotal > 0 ? "text-emerald-600" : "text-slate-300"}`}>
+            {custoTotal > 0
+              ? `R$ ${custoTotal.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+              : "-"}
+          </p>
         </div>
       </CardContent>
     </Card>
@@ -746,12 +756,13 @@ function TabelaView({
                 <TableHead className="text-right text-xs uppercase text-slate-500 hidden md:table-cell">Fim esp.</TableHead>
                 <TableHead className="text-right text-xs uppercase text-slate-500 hidden lg:table-cell">Fim real</TableHead>
                 <TableHead className="text-center text-xs uppercase text-slate-500 hidden lg:table-cell">Δ</TableHead>
+                <TableHead className="text-right text-xs uppercase text-slate-500 hidden md:table-cell">Custo MO</TableHead>
                 <TableHead className="text-xs uppercase text-slate-500 hidden md:table-cell">Progresso</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {visiveis.length === 0 ? (
-                <TableRow><TableCell colSpan={9} className="h-32 text-center text-slate-400">
+                <TableRow><TableCell colSpan={10} className="h-32 text-center text-slate-400">
                   Nenhuma tarefa. Clique em "Nova tarefa".
                 </TableCell></TableRow>
               ) : (
@@ -767,6 +778,7 @@ function TabelaView({
                         ehUltimaFilha={meta.ehUltimaFilha}
                         trilhaConectores={meta.trilha}
                         funcMap={funcMap}
+                        custoMO={calcularCustoTarefa(t, funcs)}
                         planofechado={planofechado}
                         expandido={expandidoSet.has(t.id)}
                         temFilhas={(filhasMap.get(t.id)?.length || 0)}

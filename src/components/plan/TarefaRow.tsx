@@ -45,6 +45,7 @@ export interface TarefaRowProps {
   ehUltimaFilha: boolean;
   trilhaConectores: boolean[];
   funcMap: Map<string, string>;
+  custoMO: number;
   planofechado: boolean;
   expandido: boolean;
   onToggleExpand: () => void;
@@ -65,7 +66,7 @@ export interface TarefaRowProps {
 }
 
 export function TarefaRow({
-  tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap,
+  tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap, custoMO,
   planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo, podeMover,
   selecionada, onSelecionar,
   onChange, onPromote, onDemote, onMoverCima, onMoverBaixo, onAddSub, onEdit, onDelete, isOverlay,
@@ -255,6 +256,12 @@ export function TarefaRow({
             {dias > 0 ? `+${dias}d` : dias === 0 ? "✓" : `${dias}d`}
           </Badge>
         ) : <span className="text-slate-300">-</span>}
+      </TableCell>
+
+      <TableCell className="py-1.5 text-right hidden md:table-cell">
+        <span className={cn("text-[11px] tabular-nums", custoMO > 0 ? "text-emerald-700 font-medium" : "text-slate-300")}>
+          {custoMO > 0 ? `R$ ${custoMO.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
+        </span>
       </TableCell>
 
       <TableCell className="py-1.5 hidden md:table-cell">

@@ -10,8 +10,8 @@ import {
 } from "@/components/ui/table";
 import { Loader2, ArrowLeft, FolderKanban, LogOut } from "lucide-react";
 import { toast } from "sonner";
-import type { Tarefa } from "@/types";
-import { fetchTudo } from "@/lib/supabaseService";
+import type { Tarefa, Funcionario } from "@/types";
+import { fetchTudo, fetchFuncionarios, calcularCustoTarefa } from "@/lib/supabaseService";
 
 const STATUS_LABEL: Record<string, string> = {
   a_fazer: "A fazer", fazendo: "Fazendo", concluida: "Concluída", bloqueada: "Bloqueada", cancelada: "Cancelada",
@@ -48,6 +48,7 @@ export default function TudoPage() {
   const navigate = useNavigate();
   const { empresaId, funcionario, user, signOut } = useAuth();
   const [tarefas, setTarefas] = useState<TarefaComProjeto[]>([]);
+  const [funcionarios, setFuncionarios] = useState<Funcionario[]>([]);
   const [loading, setLoading] = useState(true);
   const [colapsadosProjs, setColapsadosProjs] = useState<Set<string>>(new Set());
 
@@ -55,8 +56,9 @@ export default function TudoPage() {
     if (!empresaId) return;
     setLoading(true);
     try {
-      const dados = await fetchTudo(empresaId);
+      const [dados, funcs] = await Promise.all([fetchTudo(empresaId), fetchFuncionarios()]);
       setTarefas(dados);
+      setFuncionarios(funcs);
     } catch (e) {
       toast.error("Erro ao carregar: " + (e as Error).message);
     } finally {
@@ -135,6 +137,9 @@ export default function TudoPage() {
                       <FolderKanban className="w-4 h-4 text-primary" />
                       <span className="font-semibold text-sm">{projeto}</span>
                       <Badge variant="secondary" className="text-[10px]">{tarefasProj.length}</Badge>
+                      <Badge variant="outline" className="text-[10px] text-emerald-700 border-emerald-200 bg-emerald-50">
+                        R$ {tarefasProj.reduce((s, t) => s + calcularCustoTarefa(t, funcionarios), 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </Badge>
                     </div>
                     <span className="text-xs text-slate-400">{colapsado ? "(colapsado)" : "(aberto)"}</span>
                   </button>
@@ -144,6 +149,7 @@ export default function TudoPage() {
                         <TableRow className="bg-slate-50/80">
                           <TableHead className="text-xs uppercase text-slate-500">Título</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500">Status</TableHead>
+                          <TableHead className="text-right text-xs uppercase text-slate-500 hidden md:table-cell">Custo MO</TableHead>
                           <TableHead className="text-xs uppercase text-slate-500 hidden md:table-cell">Progresso</TableHead>
                         </TableRow>
                       </TableHeader>
@@ -162,6 +168,14 @@ export default function TudoPage() {
                                 <Badge variant="outline" className={STATUS_COLOR[t.status] + " text-[10px]"}>
                                   {STATUS_LABEL[t.status]}
                                 </Badge>
+                              </TableCell>
+                              <TableCell className="py-1.5 text-right hidden md:table-cell">
+                                {(() => {
+                                  const c = calcularCustoTarefa(t, funcionarios);
+                                  return c > 0
+                                    ? <span className="text-[11px] tabular-nums text-emerald-700 font-medium">R$ {c.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+                                    : <span className="text-slate-300">-</span>;
+                                })()}
                               </TableCell>
                               <TableCell className="py-1.5 hidden md:table-cell">
                                 <div className="flex items-center gap-1.5 min-w-[100px]">

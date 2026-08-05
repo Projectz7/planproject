@@ -1,5 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
-import type { Obra, Funcionario, Plano, Tarefa, StatusPlano } from "@/types";
+import type { Obra, Funcionario, Equipe, Plano, Tarefa, StatusPlano } from "@/types";
 
 // ---------- Obras (do schema do di-gest) ----------
 export async function fetchObras(): Promise<Obra[]> {
@@ -25,11 +25,53 @@ export async function fetchObra(id: string): Promise<Obra | null> {
 export async function fetchFuncionarios(): Promise<Funcionario[]> {
   const { data, error } = await supabase
     .from("funcionarios")
-    .select("id, nome, is_gerente, ativo, equipe_id, telefone")
+    .select("id, nome, is_gerente, ativo, equipe_id, telefone, custo_diario")
     .eq("ativo", true)
     .order("nome", { ascending: true });
   if (error) throw error;
   return (data || []) as unknown as Funcionario[];
+}
+
+// ---------- Equipes ----------
+export async function fetchEquipes(): Promise<Equipe[]> {
+  const { data, error } = await supabase
+    .from("equipes")
+    .select("id, nome, cor, empresa_id")
+    .order("nome", { ascending: true });
+  if (error) throw error;
+  return (data || []) as unknown as Equipe[];
+}
+
+// ---------- Custo de mão de obra ----------
+// Retorna o custo diário aplicável a uma tarefa:
+//  - Se responsavel_id setado e tiver custo_diario > 0 → custo do responsável
+//  - Senão se equipe_id setado → soma custo_diario dos membros ativos da equipe
+//  - Senão 0
+export function calcularCustoDiarioTarefa(
+  t: Pick<Tarefa, "responsavel_id" | "equipe_id">,
+  funcionarios: Funcionario[],
+): number {
+  if (t.responsavel_id) {
+    const resp = funcionarios.find((f) => f.id === t.responsavel_id);
+    if (resp && Number(resp.custo_diario ?? 0) > 0) return Number(resp.custo_diario);
+  }
+  if (t.equipe_id) {
+    const soma = funcionarios
+      .filter((f) => f.equipe_id === t.equipe_id)
+      .reduce((acc, f) => acc + (Number(f.custo_diario ?? 0) || 0), 0);
+    return soma;
+  }
+  return 0;
+}
+
+// Custo total = custoDiario × peso_tarefa (dias). Se peso < 1, usa 1.
+export function calcularCustoTarefa(
+  t: Tarefa,
+  funcionarios: Funcionario[],
+): number {
+  const diario = calcularCustoDiarioTarefa(t, funcionarios);
+  const dias = Number((t as any).peso_tarefa ?? 1) || 1;
+  return diario * Math.max(1, dias);
 }
 
 // ---------- Planos ----------

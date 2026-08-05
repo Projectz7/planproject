@@ -24,6 +24,14 @@ export interface Funcionario {
   ativo: boolean;
   equipe_id?: string | null;
   telefone?: string | null;
+  custo_diario?: number | null;
+}
+
+export interface Equipe {
+  id: string;
+  nome: string;
+  cor?: string | null;
+  empresa_id?: string;
 }
 
 export interface Plano {
