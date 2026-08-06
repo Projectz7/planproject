@@ -93,7 +93,7 @@ const readonly = planofechado && !editando; // em plano fechado, só criar bloqu
         descricao: descricao.trim() || null,
         responsavel_id: responsavelId || null,
         equipe_id: equipeId || null,
-        horas_estimadas: usarHoras ? horasEstimadas : null,
+        horas_estimadas: usaHoras ? horasEstimadas : null,
         prioridade,
         peso_tarefa: pesoTarefa,
         data_inicio: dataInicio || null,
@@ -188,7 +188,7 @@ const readonly = planofechado && !editando; // em plano fechado, só criar bloqu
               const f = funcionarios.find((x) => x.id === responsavelId);
               if (f) { custoDiario = Number(f.custo_diario ?? 0); base = f.nome.split(" ")[0]; }
             }
-            if (custoDiario > 0 && usarHoras) {
+            if (custoDiario > 0 && usaHoras) {
               const total = custoDiario * (horasEstimadas / 8);
               return <p className="text-xs text-emerald-700 font-medium">Custo MO: R$ {custoDiario.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia ÷ 8h × {horasEstimadas}h = <strong>R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong> ({base})</p>;
             }
