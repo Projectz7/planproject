@@ -29,7 +29,26 @@ export async function fetchFuncionarios(): Promise<Funcionario[]> {
     .eq("ativo", true)
     .order("nome", { ascending: true });
   if (error) throw error;
-  return (data || []) as unknown as Funcionario[];
+
+  const funcs = (data || []) as unknown as Funcionario[];
+
+  // Carrega o pivô N:N funcionario_equipes para popular equipe_ids[]
+  try {
+    const { data: ve, error: veErr } = await supabase
+      .from("funcionario_equipes")
+      .select("funcionario_id, equipe_id");
+    if (!veErr && ve && ve.length) {
+      const mapIdx = new Map<string, string[]>();
+      for (const r of ve as { funcionario_id: string; equipe_id: string }[]) {
+        mapIdx.set(r.funcionario_id, [...(mapIdx.get(r.funcionario_id) ?? []), r.equipe_id]);
+      }
+      for (const f of funcs) f.equipe_ids = mapIdx.get(f.id) ?? [];
+    }
+  } catch {
+    // pivô indisponível: mantém equipe_ids vazio
+  }
+
+  return funcs;
 }
 
 // ---------- Equipes ----------
@@ -44,34 +63,40 @@ export async function fetchEquipes(): Promise<Equipe[]> {
 
 // ---------- Custo de mão de obra ----------
 // Retorna o custo diário aplicável a uma tarefa:
-//  - Se responsavel_id setado e tiver custo_diario > 0 → custo do responsável
-//  - Senão se equipe_id setado → soma custo_diario dos membros ativos da equipe
+//  - Se equipe_id setado → soma custo_diario dos membros ativos da equipe (prevalece sobre responsável)
+//  - Senão se responsavel_id setado e tiver custo_diario > 0 → custo do responsável
 //  - Senão 0
 export function calcularCustoDiarioTarefa(
   t: Pick<Tarefa, "responsavel_id" | "equipe_id">,
   funcionarios: Funcionario[],
 ): number {
-  // Responsável setado: usa somente o custo dele (mesmo se 0 = sem custo)
+  // Equipe prevalece sobre responsável
+  if (t.equipe_id) {
+    const soma = funcionarios
+      .filter((f) => (f.equipe_ids ?? []).includes(t.equipe_id!))
+      .reduce((acc, f) => acc + (Number(f.custo_diario ?? 0) || 0), 0);
+    return soma;
+  }
+  // Sem equipe: usa somente o custo do responsável (mesmo se 0 = sem custo)
   if (t.responsavel_id) {
     const resp = funcionarios.find((f) => f.id === t.responsavel_id);
     if (resp) return Number(resp.custo_diario ?? 0);
-  }
-  // Sem responsável, mas com equipe: soma custo diário dos membros
-  if (t.equipe_id) {
-    const soma = funcionarios
-      .filter((f) => f.equipe_id === t.equipe_id)
-      .reduce((acc, f) => acc + (Number(f.custo_diario ?? 0) || 0), 0);
-    return soma;
   }
   return 0;
 }
 
 // Custo total = custoDiario × peso_tarefa (dias). Se peso < 1, usa 1.
+// Tarefa de mesmo dia com horas_estimadas → proporcional: (diario/8) × horas.
 export function calcularCustoTarefa(
   t: Tarefa,
   funcionarios: Funcionario[],
 ): number {
   const diario = calcularCustoDiarioTarefa(t, funcionarios);
+  const mesmoDia =
+    t.data_inicio && t.data_fim && t.data_inicio === t.data_fim;
+  if (mesmoDia && t.horas_estimadas && Number(t.horas_estimadas) > 0) {
+    return diario * (Number(t.horas_estimadas) / 8);
+  }
   const dias = Number(t.peso_tarefa ?? 1) || 1;
   return diario * Math.max(1, dias);
 }

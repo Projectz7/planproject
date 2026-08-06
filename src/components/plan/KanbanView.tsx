@@ -8,8 +8,8 @@ import { CSS } from "@dnd-kit/utilities";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Plus, Pencil, Trash2, GripVertical, Calendar, User } from "lucide-react";
-import type { Tarefa, Funcionario, StatusTarefa } from "@/types";
+import { Plus, Pencil, Trash2, GripVertical, Calendar, User, Users } from "lucide-react";
+import type { Tarefa, Funcionario, StatusTarefa, Equipe } from "@/types";
 import ProgressoBar from "./ProgressoBar";
 
 const COLunas: { id: StatusTarefa; titulo: string; cor: string; bola: string }[] = [
@@ -23,9 +23,9 @@ const PRIO_DOT: Record<string, string> = {
 };
 
 function CardTarefa({
-  t, funcMap, onEdit, onDelete, onAddSub, isOverlay,
+  t, funcMap, equipeMap, onEdit, onDelete, onAddSub, isOverlay,
 }: {
-  t: Tarefa; funcMap: Map<string, string>;
+  t: Tarefa; funcMap: Map<string, string>; equipeMap: Map<string, string>;
   onEdit: (t: Tarefa) => void; onDelete: (t: Tarefa) => void; onAddSub: (t: Tarefa) => void;
   isOverlay?: boolean;
 }) {
@@ -37,8 +37,9 @@ function CardTarefa({
     transition,
     opacity: isDragging ? 0.3 : 1,
   };
-  const isFilha = !!t.parent_id;
+const isFilha = !!t.parent_id;
   const resp = t.responsavel?.nome || t.responsavelNome || (t.responsavel_id ? funcMap.get(t.responsavel_id) : null);
+  const eqNome = t.equipe_id ? equipeMap.get(t.equipe_id) : null;
   const fmt = (d: string | null | undefined) => d ? new Date(d).toLocaleDateString("pt-BR", { day: "2/M", month: "2-digit" }) : "-";
   const finalDone = t.status === "concluida";
   const dataFim = finalDone ? t.data_fim_real : t.data_fim;
@@ -62,9 +63,14 @@ function CardTarefa({
               </p>
               <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                 <span className={`w-1.5 h-1.5 rounded-full ${PRIO_DOT[t.prioridade] || "bg-slate-300"}`} title={`Prioridade ${t.prioridade}`} />
-                {resp && (
+{resp && (
                   <Badge variant="outline" className="text-[10px] py-0 px-1 gap-0.5 truncate max-w-[120px]">
                     <User className="w-2.5 h-2.5" />{resp}
+                  </Badge>
+                )}
+                {eqNome && !resp && (
+                  <Badge variant="outline" className="text-[10px] py-0 px-1 gap-0.5 truncate max-w-[120px] border-green-200 bg-green-50 text-green-700">
+                    <Users className="w-2.5 h-2.5" />{eqNome}
                   </Badge>
                 )}
                 <Badge variant="outline" className={`text-[10px] py-0 px-1 ${atrasada ? "text-red-600 border-red-200 bg-red-50" : ""}`} title="Data fim">
@@ -90,6 +96,7 @@ function CardTarefa({
 export interface KanbanViewProps {
   tarefas: Tarefa[];
   funcs: Funcionario[];
+  equipes: Equipe[];
   planofechado: boolean;
   onStatus: (t: Tarefa, novoStatus: string) => void;
   onReorder: (tarefaId: string, novoStatus: string, novaOrdem: number) => void;
@@ -99,9 +106,10 @@ export interface KanbanViewProps {
 }
 
 export default function KanbanView({
-  tarefas, funcs, planofechado, onStatus, onReorder, onEdit, onDelete, onAddSub,
+tarefas, funcs, equipes, planofechado, onStatus, onReorder, onEdit, onDelete, onAddSub,
 }: KanbanViewProps) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
+  const equipeMap = new Map(equipes.map((e) => [e.id, e.nome]));
   const [activeId, setActiveId] = useState<string | null>(null);
 
   // só raiz (sem parent) vão para o Kanban; filhas aparecem dentro do diálogo
@@ -188,13 +196,13 @@ export default function KanbanView({
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-start">
         {COLunas.map((c) => {
           const set = localCols[c.id] || [];
-          return <ColunaKanban key={c.id} col={c} set={set} funcMap={funcMap}
+          return <ColunaKanban key={c.id} col={c} set={set} funcMap={funcMap} equipeMap={equipeMap}
             onEdit={onEdit} onDelete={onDelete} onAddSub={onAddSub} />;
         })}
       </div>
       <DragOverlay>
         {active ? (
-          <CardTarefa t={active} funcMap={funcMap}
+          <CardTarefa t={active} funcMap={funcMap} equipeMap={equipeMap}
             onEdit={() => {}} onDelete={() => {}} onAddSub={() => {}} isOverlay />
         ) : null}
       </DragOverlay>
@@ -203,10 +211,10 @@ export default function KanbanView({
 }
 
 function ColunaKanban({
-  col, set, funcMap, onEdit, onDelete, onAddSub,
+  col, set, funcMap, equipeMap, onEdit, onDelete, onAddSub,
 }: {
   col: { id: StatusTarefa; titulo: string; cor: string; bola: string };
-  set: Tarefa[]; funcMap: Map<string, string>;
+  set: Tarefa[]; funcMap: Map<string, string>; equipeMap: Map<string, string>;
   onEdit: (t: Tarefa) => void; onDelete: (t: Tarefa) => void; onAddSub: (t: Tarefa) => void;
 }) {
   const droppableId = `col-${col.id}`;
@@ -228,7 +236,7 @@ function ColunaKanban({
                     </div>
                   ) : (
                     set.map((t) => (
-                      <CardTarefa key={t.id} t={t} funcMap={funcMap}
+                      <CardTarefa key={t.id} t={t} funcMap={funcMap} equipeMap={equipeMap}
                         onEdit={onEdit} onDelete={onDelete} onAddSub={onAddSub} />
                     ))
                   )}

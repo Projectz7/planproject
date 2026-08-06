@@ -45,6 +45,7 @@ export interface TarefaRowProps {
   ehUltimaFilha: boolean;
   trilhaConectores: boolean[];
   funcMap: Map<string, string>;
+  equipeMap: Map<string, string>;
   custoMO: number;
   planofechado: boolean;
   expandido: boolean;
@@ -66,7 +67,7 @@ export interface TarefaRowProps {
 }
 
 export function TarefaRow({
-  tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap, custoMO,
+  tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap, equipeMap, custoMO,
   planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo, podeMover,
   selecionada, onSelecionar,
   onChange, onPromote, onDemote, onMoverCima, onMoverBaixo, onAddSub, onEdit, onDelete, isOverlay,
@@ -84,6 +85,7 @@ export function TarefaRow({
 
   const { dias, atrasada } = deltaDias(t);
   const resp = t.responsavel?.nome || (t.responsavel_id ? funcMap.get(t.responsavel_id) : null);
+  const eqNome = t.equipe_id ? equipeMap.get(t.equipe_id) : null;
 
   // trilha de conectores ├ └ para cada nivel acima
   const conectores = trilhaConectores.map((c, i) => {
@@ -215,17 +217,23 @@ export function TarefaRow({
       </TableCell>
 
       <TableCell className="py-1.5 hidden md:table-cell">
-        <InlineGraph tipo="texto">
-          <InlineText
-            valor={resp ?? ""}
-            placeholder="-"
-            onSalvar={async (v) => {
-              await onChange({ descricao: v } as any);
-            }}
-            disabled={planofechado}
-            className="min-w-[80px]"
-          />
-        </InlineGraph>
+        {eqNome && !resp ? (
+          <span className="text-[11px] font-medium text-green-700 whitespace-nowrap" title={`Equipe: ${eqNome}`}>
+            {eqNome}
+          </span>
+        ) : (
+          <InlineGraph tipo="texto">
+            <InlineText
+              valor={resp ?? ""}
+              placeholder="-"
+              onSalvar={async (v) => {
+                await onChange({ descricao: v } as any);
+              }}
+              disabled={planofechado}
+              className="min-w-[80px]"
+            />
+          </InlineGraph>
+        )}
       </TableCell>
 
       <TableCell className="py-1.5 text-right hidden md:table-cell">
@@ -258,7 +266,7 @@ export function TarefaRow({
         ) : <span className="text-slate-300">-</span>}
       </TableCell>
 
-      <TableCell className="py-1.5 text-right hidden md:table-cell">
+      <TableCell className="py-1.5 text-right hidden md:table-cell" title={custoMO > 0 ? `Custo MO: R$ ${custoMO.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}` : undefined}>
         <span className={cn("text-[11px] tabular-nums", custoMO > 0 ? "text-emerald-700 font-medium" : "text-slate-300")}>
           {custoMO > 0 ? `R$ ${custoMO.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}` : "-"}
         </span>

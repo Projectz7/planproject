@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectGroup, SelectLabel, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -43,6 +43,8 @@ export default function TarefaFormDialog({
   const [progresso, setProgresso] = useState<number>(0);
   const [progressoManual, setProgressoManual] = useState<boolean>(false);
   const [status, setStatus] = useState<string>("a_fazer");
+  const [horasEstimadas, setHorasEstimadas] = useState<number>(4);
+  const [modoDuracao, setModoDuracao] = useState<"dia" | "horas">("dia");
   const [salvando, setSalvando] = useState(false);
 
   useEffect(() => {
@@ -65,16 +67,22 @@ export default function TarefaFormDialog({
       setProgresso(editando.progresso);
       setProgressoManual(editando.progresso_manual);
       setStatus(editando.status);
+      setHorasEstimadas(editando.horas_estimadas ?? 4);
+      setModoDuracao(editando.horas_estimadas && Number(editando.horas_estimadas) > 0 ? "horas" : "dia");
     } else {
       setTitulo(""); setDescricao(""); setResponsavelId(""); setEquipeId(""); setPrioridade("media");
       setPesoTarefa(1);
       setDataInicio(""); setDataFim(""); setDataInicioReal(""); setDataFimReal("");
       setProgresso(0); setProgressoManual(false); setStatus("a_fazer");
+      setHorasEstimadas(4); setModoDuracao("dia");
     }
   }, [editando, open]);
 
-  const readonly = planofechado && !editando; // em plano fechado, só criar bloqueado
+const readonly = planofechado && !editando; // em plano fechado, só criar bloqueado
   const blocked = !!planofechado;
+
+  const mesmoDia = dataInicio && dataFim && dataInicio === dataFim;
+  const usaHoras = mesmoDia && modoDuracao === "horas";
 
   const handleSave = async () => {
     if (!titulo.trim()) { toast.error("Título é obrigatório"); return; }
@@ -85,6 +93,7 @@ export default function TarefaFormDialog({
         descricao: descricao.trim() || null,
         responsavel_id: responsavelId || null,
         equipe_id: equipeId || null,
+        horas_estimadas: usarHoras ? horasEstimadas : null,
         prioridade,
         peso_tarefa: pesoTarefa,
         data_inicio: dataInicio || null,
@@ -134,23 +143,37 @@ export default function TarefaFormDialog({
             <Textarea value={descricao} onChange={(e) => setDescricao(e.target.value)} rows={2} />
           </div>
           <div className="grid grid-cols-2 gap-3">
-            <div className="grid gap-1.5">
-              <Label>Responsável</Label>
-              <Select value={responsavelId || "none"} onValueChange={(v) => setResponsavelId(v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Sem responsável" /></SelectTrigger>
+            <div className="grid gap-1.5 col-span-2">
+              <Label>Responsável / Equipe</Label>
+              <Select
+                value={responsavelId ? `func:${responsavelId}` : equipeId ? `equipe:${equipeId}` : "none"}
+                onValueChange={(v) => {
+                  if (v === "none") { setResponsavelId(""); setEquipeId(""); }
+                  else if (v.startsWith("func:")) { setResponsavelId(v.slice(5)); setEquipeId(""); }
+                  else if (v.startsWith("equipe:")) { setEquipeId(v.slice(7)); setResponsavelId(""); }
+                }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Funcionário ou equipe" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="none">Sem responsável</SelectItem>
-                  {funcionarios.map((f) => <SelectItem key={f.id} value={f.id}>{f.nome}{Number(f.custo_diario ?? 0) > 0 ? ` · R$ ${f.custo_diario}/dia` : ""}</SelectItem>)}
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="grid gap-1.5">
-              <Label>Equipe</Label>
-              <Select value={equipeId || "none"} onValueChange={(v) => setEquipeId(v === "none" ? "" : v)}>
-                <SelectTrigger><SelectValue placeholder="Sem equipe" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Sem equipe</SelectItem>
-                  {equipes.map((eq) => <SelectItem key={eq.id} value={eq.id}>{eq.nome}</SelectItem>)}
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  <SelectGroup>
+                    <SelectLabel className="text-blue-600">Funcionários</SelectLabel>
+                    {funcionarios.map((f) => (
+                      <SelectItem key={f.id} value={`func:${f.id}`} className="text-blue-700">
+                        {f.nome}{Number(f.custo_diario ?? 0) > 0 ? ` · R$ ${f.custo_diario}/dia` : ""}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel className="text-green-600">Equipes</SelectLabel>
+                    {equipes.map((eq) => (
+                      <SelectItem key={eq.id} value={`equipe:${eq.id}`} className="text-green-700">
+                        {eq.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
@@ -158,12 +181,16 @@ export default function TarefaFormDialog({
           {(() => {
             let custoDiario = 0;
             let base = "";
-            if (responsavelId) {
+            if (equipeId) {
+              custoDiario = funcionarios.filter((f) => (f.equipe_ids ?? []).includes(equipeId)).reduce((s, f) => s + (Number(f.custo_diario) || 0), 0);
+              base = "equipe";
+            } else if (responsavelId) {
               const f = funcionarios.find((x) => x.id === responsavelId);
               if (f) { custoDiario = Number(f.custo_diario ?? 0); base = f.nome.split(" ")[0]; }
-            } else if (equipeId) {
-              custoDiario = funcionarios.filter((f) => f.equipe_id === equipeId).reduce((s, f) => s + (Number(f.custo_diario) || 0), 0);
-              base = "equipe";
+            }
+            if (custoDiario > 0 && usarHoras) {
+              const total = custoDiario * (horasEstimadas / 8);
+              return <p className="text-xs text-emerald-700 font-medium">Custo MO: R$ {custoDiario.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/dia ÷ 8h × {horasEstimadas}h = <strong>R$ {total.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</strong> ({base})</p>;
             }
             const total = custoDiario * Math.max(1, pesoTarefa);
             if (custoDiario > 0)
@@ -190,6 +217,37 @@ export default function TarefaFormDialog({
                 <Input type="number" min={1} value={pesoTarefa} onChange={(e) => setPesoTarefa(Math.max(1, Number(e.target.value) || 1))} />
               </div>
             </div>
+            {mesmoDia && (
+              <div className="flex items-center gap-4 pt-1">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="modo-dia"
+                    checked={modoDuracao === "dia"}
+                    onChange={() => setModoDuracao("dia")}
+                    className="accent-slate-700"
+                  />
+                  <label htmlFor="modo-dia" className="text-xs text-slate-600">Dia inteiro (8h)</label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    id="modo-horas"
+                    checked={modoDuracao === "horas"}
+                    onChange={() => setModoDuracao("horas")}
+                    className="accent-slate-700"
+                  />
+                  <label htmlFor="modo-horas" className="text-xs text-slate-600">Horas</label>
+                </div>
+                {modoDuracao === "horas" && (
+                  <div className="flex items-center gap-1.5">
+                    <Input type="number" min={1} max={24} value={horasEstimadas} className="w-20 h-8"
+                      onChange={(e) => setHorasEstimadas(Math.max(1, Number(e.target.value) || 1))} />
+                    <span className="text-xs text-slate-500">h</span>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* REALIZADO */}

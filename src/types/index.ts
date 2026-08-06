@@ -23,6 +23,7 @@ export interface Funcionario {
   is_gerente: boolean;
   ativo: boolean;
   equipe_id?: string | null;
+  equipe_ids?: string[];
   telefone?: string | null;
   custo_diario?: number | null;
 }
@@ -67,6 +68,7 @@ export interface Tarefa {
   progresso_manual: boolean;
   progresso: number;
   peso_tarefa?: number;
+  horas_estimadas?: number | null;
   observacao?: string | null;
   created_at?: string;
   updated_at?: string;

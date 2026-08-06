@@ -11,11 +11,11 @@ import {
 } from "@/components/ui/table";
 import { Loader2, ArrowLeft, Plus, Flag, CheckCircle2, Lock, RefreshCw, Pencil, Trash2 } from "lucide-react";
 import { toast } from "sonner";
-import type { Obra, Funcionario, Plano, Tarefa, StatusPlano } from "@/types";
+import type { Obra, Funcionario, Plano, Tarefa, StatusPlano, Equipe } from "@/types";
 import {
   fetchObra, fetchFuncionarios, fetchPlanosByObra, createPlano, updatePlanoStatus,
   fetchTarefasByPlano, updateTarefa, deleteTarefa, createTarefa, reagruparFilhas,
-  calcularCustoTarefa,
+  calcularCustoTarefa, fetchEquipes,
 } from "@/lib/supabaseService";
 import ProgressoBar from "@/components/plan/ProgressoBar";
 import TarefaFormDialog from "@/components/plan/TarefaFormDialog";
@@ -58,6 +58,7 @@ export default function ObraPlanoPage() {
   const [planos, setPlanos] = useState<Plano[]>([]);
   const [planoAtivoId, setPlanoAtivoId] = useState<string | null>(null);
   const [tarefas, setTarefas] = useState<Tarefa[]>([]);
+  const [equipes, setEquipes] = useState<Equipe[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingTarefas, setLoadingTarefas] = useState(false);
   const [view, setView] = useState<"tabela" | "kanban">("tabela");
@@ -75,12 +76,13 @@ export default function ObraPlanoPage() {
     (async () => {
       setLoading(true);
       try {
-        const [ob, funcs, plans] = await Promise.all([
-          fetchObra(obraId), fetchFuncionarios(), fetchPlanosByObra(obraId),
+const [ob, funcs, plans, eqs] = await Promise.all([
+          fetchObra(obraId), fetchFuncionarios(), fetchPlanosByObra(obraId), fetchEquipes(),
         ]);
         setObra(ob);
         setFuncionarios(funcs);
         setPlanos(plans);
+        setEquipes(eqs);
         // seleciona plano: último fechado senão último rascunho senão null
         const fechado = [...plans].reverse().find((p) => p.status === "fechado");
         const rascunho = [...plans].reverse().find((p) => p.status === "rascunho");
@@ -463,13 +465,13 @@ export default function ObraPlanoPage() {
         ) : loadingTarefas ? (
           <div className="py-12 flex justify-center"><Loader2 className="w-6 h-6 animate-spin" /></div>
         ) : view === "tabela" ? (
-          <TabelaView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
+          <TabelaView tarefas={tarefas} funcs={funcionarios} equipes={equipes} planofechado={planofechado || false}
             onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)}
             onDrop={handleDrop} onUpdate={handleUpdateTarefa}
             onMudarNivel={handleMudarNivel} onMoverVertical={handleMoverVertical} podeMover={podeMover}
             focoInlineId={focoInlineId} selecionadaId={tarefaSelecionadaId} onSelecionar={(id) => setTarefaSelecionadaId(id)} />
         ) : (
-          <KanbanView tarefas={tarefas} funcs={funcionarios} planofechado={planofechado || false}
+          <KanbanView tarefas={tarefas} funcs={funcionarios} equipes={equipes} planofechado={planofechado || false}
             onStatus={handleStatusInline} onReorder={handleReorderKanban}
             onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)} />
         )}
@@ -537,9 +539,9 @@ function PlanoProgressBar({ tarefas, funcs }: { tarefas: Tarefa[]; funcs: Funcio
 
 // ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit + joystick) ----------
 function TabelaView({
-  tarefas, funcs, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId, selecionadaId, onSelecionar,
+  tarefas, funcs, equipes, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId, selecionadaId, onSelecionar,
 }: {
-  tarefas: Tarefa[]; funcs: Funcionario[]; planofechado: boolean;
+  tarefas: Tarefa[]; funcs: Funcionario[]; equipes: Equipe[]; planofechado: boolean;
   onStatus: (t: Tarefa, s: string) => void; onEdit: (t: Tarefa) => void;
   onDelete: (t: Tarefa) => void; onAddSub: (t: Tarefa) => void;
   onDrop: (
@@ -557,6 +559,7 @@ function TabelaView({
   onSelecionar: (id: string | null) => void;
 }) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
+  const equipeMap = new Map(equipes.map((e) => [e.id, e.nome]));
   const sorted = useMemo(() => ordernar(tarefas), [tarefas]);
 
   // mapeia tarefa -> filhas (para saber quais expandir e contar)
@@ -778,6 +781,7 @@ function TabelaView({
                         ehUltimaFilha={meta.ehUltimaFilha}
                         trilhaConectores={meta.trilha}
                         funcMap={funcMap}
+                        equipeMap={equipeMap}
                         custoMO={calcularCustoTarefa(t, funcs)}
                         planofechado={planofechado}
                         expandido={expandidoSet.has(t.id)}
