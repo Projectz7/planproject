@@ -14,8 +14,8 @@ export default function AccessPage() {
     if (!token) { setError('Link invÃ¡lido.'); return; }
 
     (async () => {
-      const { data, error: rpcErr } = await supabase.rpc('validar_token_acesso' as any, {
-        p_token: token,
+      const { data, error: rpcErr } = await supabase.rpc('validar_app_token' as any, {
+        p_token: token, p_app_id: 'planseven',
       });
       if (rpcErr || !data) { setError('Erro ao validar acesso.'); return; }
 
