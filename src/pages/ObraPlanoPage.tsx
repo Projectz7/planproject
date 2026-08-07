@@ -67,6 +67,23 @@ export default function ObraPlanoPage() {
   const [parentIdDialog, setParentIdDialog] = useState<string | null>(null);
   const [focoInlineId, setFocoInlineId] = useState<string | null>(null);
   const [tarefaSelecionadaId, setTarefaSelecionadaId] = useState<string | null>(null);
+  const [focoIndex, setFocoIndex] = useState(-1); // pré-seleção (navegação) - índice na lista visível
+
+  // lista achatada (por profundidade) usada para navegação por pré-seleção
+  const todasVisiveis = useMemo(() => ordernar(tarefas), [tarefas]);
+  const tudoLen = todasVisiveis.length;
+
+  // garante focoIndex válido ao mudar tarefas
+  useEffect(() => {
+    setFocoIndex((i) => (i < 0 || i >= tudoLen) ? (tudoLen > 0 ? 0 : -1) : i);
+  }, [tudoLen]);
+
+  // sincroniza focoIndex quando a tarefa selecionada muda (selecionar → focar a mesma)
+  useEffect(() => {
+    if (!tarefaSelecionadaId) return;
+    const idx = todasVisiveis.findIndex((t) => t.id === tarefaSelecionadaId);
+    if (idx >= 0) setFocoIndex(idx);
+  }, [tarefaSelecionadaId, todasVisiveis]);
 
   const planoAtivo = useMemo(() => planos.find((p) => p.id === planoAtivoId) || null, [planos, planoAtivoId]);
   const planofechado = planoAtivo?.status === "fechado";
@@ -275,18 +292,37 @@ const [ob, funcs, plans, eqs] = await Promise.all([
     if (planofechado) return;
     switch (acao) {
       case "toggle_selecionar": {
-        if (tarefaSelecionadaId) setTarefaSelecionadaId(null);
-        else {
-          const visiveis = ordernar(tarefas);
-          if (visiveis.length > 0) setTarefaSelecionadaId(visiveis[0].id);
-          else toast.info("Nenhuma tarefa para selecionar");
+        if (tarefaSelecionadaId) {
+          setTarefaSelecionadaId(null);
+        } else {
+          const t = focoIndex >= 0 && focoIndex < tudoLen ? todasVisiveis[focoIndex] : null;
+          if (t) setTarefaSelecionadaId(t.id);
+          else if (tudoLen > 0) {
+            setFocoIndex(0);
+            setTarefaSelecionadaId(todasVisiveis[0].id);
+          } else {
+            toast.info("Nenhuma tarefa para selecionar");
+          }
         }
         break;
       }
       case "cima":
-      case "baixo":
-        if (tarefaSelecionadaId) await handleMoverVertical(tarefaSelecionadaId, acao);
+      case "baixo": {
+        if (tarefaSelecionadaId) {
+          await handleMoverVertical(tarefaSelecionadaId, acao);
+        } else {
+          // navegação por pré-seleção: move o foco entre as tarefas (lista plana)
+          setFocoIndex((i) => {
+            if (tudoLen === 0) return -1;
+            const delta = acao === "cima" ? -1 : 1;
+            const ni = i + delta;
+            if (ni < 0) return 0;
+            if (ni > tudoLen - 1) return tudoLen - 1;
+            return ni;
+          });
+        }
         break;
+      }
       case "esquerda":
         if (tarefaSelecionadaId) await handleMudarNivel(tarefaSelecionadaId, "promover");
         break;
@@ -469,7 +505,8 @@ const [ob, funcs, plans, eqs] = await Promise.all([
             onStatus={handleStatusInline} onEdit={abrirEditar} onDelete={handleDelete} onAddSub={(t) => abrirNova(t.id)}
             onDrop={handleDrop} onUpdate={handleUpdateTarefa}
             onMudarNivel={handleMudarNivel} onMoverVertical={handleMoverVertical} podeMover={podeMover}
-            focoInlineId={focoInlineId} selecionadaId={tarefaSelecionadaId} onSelecionar={(id) => setTarefaSelecionadaId(id)} />
+            focoInlineId={focoInlineId} selecionadaId={tarefaSelecionadaId} onSelecionar={(id) => setTarefaSelecionadaId(id)}
+            focadaId={!tarefaSelecionadaId && focoIndex >= 0 ? todasVisiveis[focoIndex]?.id ?? null : null} />
         ) : (
           <KanbanView tarefas={tarefas} funcs={funcionarios} equipes={equipes} planofechado={planofechado || false}
             onStatus={handleStatusInline} onReorder={handleReorderKanban}
@@ -482,6 +519,8 @@ const [ob, funcs, plans, eqs] = await Promise.all([
           onAcao={handleGamepadAction}
           tarefaSelecionada={!!tarefaSelecionadaId}
           podeMover={tarefaSelecionadaId ? podeMover(tarefaSelecionadaId) : { cima: false, baixo: false, esquerda: false, direita: false }}
+          podeNavegar={{ cima: focoIndex > 0, baixo: focoIndex < tudoLen - 1 }}
+          temTarefas={tudoLen > 0}
         />
       )}
 
@@ -537,9 +576,9 @@ function PlanoProgressBar({ tarefas, funcs }: { tarefas: Tarefa[]; funcs: Funcio
   );
 }
 
-// ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit + joystick) ----------
+// ---------- Tabela (Zenkit-style: arvore + drag-to-indent + inline-edit + gamepad) ----------
 function TabelaView({
-  tarefas, funcs, equipes, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId, selecionadaId, onSelecionar,
+  tarefas, funcs, equipes, planofechado, onStatus, onEdit, onDelete, onAddSub, onDrop, onUpdate, onMudarNivel, onMoverVertical, podeMover, focoInlineId, selecionadaId, onSelecionar, focadaId,
 }: {
   tarefas: Tarefa[]; funcs: Funcionario[]; equipes: Equipe[]; planofechado: boolean;
   onStatus: (t: Tarefa, s: string) => void; onEdit: (t: Tarefa) => void;
@@ -557,6 +596,7 @@ function TabelaView({
   focoInlineId: string | null;
   selecionadaId: string | null;
   onSelecionar: (id: string | null) => void;
+  focadaId: string | null;
 }) {
   const funcMap = new Map(funcs.map((f) => [f.id, f.nome]));
   const equipeMap = new Map(equipes.map((e) => [e.id, e.nome]));
@@ -789,6 +829,7 @@ function TabelaView({
                         focoInlineTitulo={focoInlineId === t.id}
                         podeMover={podeMover(t.id)}
                         selecionada={selecionadaId === t.id}
+                        focada={focadaId === t.id}
                         onSelecionar={() => onSelecionar(selecionadaId === t.id ? null : t.id)}
                         onToggleExpand={() => setExpandidoSet((prev) => {
                           const novo = new Set(prev);

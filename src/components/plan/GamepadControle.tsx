@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
-import { MousePointerClick, Plus, Pencil, Trash2, CheckCircle2 } from "lucide-react";
-import { AnalogicoPS, type Direcao } from "./AnalogicoPS";
+import {
+  MousePointerClick, Plus, Pencil, Trash2, CheckCircle2,
+  ChevronUp, ChevronDown, ChevronLeft, ChevronRight,
+} from "lucide-react";
 import { cn } from "@/lib/utils";
+
+export type Direcao = "cima" | "baixo" | "esquerda" | "direita";
 
 export type GamepadAcao =
   | Direcao
@@ -14,6 +18,8 @@ export interface GamepadControleProps {
   onAcao: (a: GamepadAcao) => void;
   tarefaSelecionada: boolean;
   podeMover: { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean };
+  podeNavegar?: { cima: boolean; baixo: boolean };
+  temTarefas: boolean;
   className?: string;
 }
 
@@ -22,6 +28,8 @@ const PS_BTN = {
   adicionar:  { cor: "bg-emerald-500 hover:bg-emerald-600 text-white" },
   editar:     { cor: "bg-amber-400 hover:bg-amber-500 text-white" },
   excluir:    { cor: "bg-rose-500 hover:bg-rose-600 text-white" },
+  // D-Pad: botões menores, estilo console
+  dpad:       { cor: "bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600" },
 };
 
 function BotaoPS({
@@ -54,10 +62,36 @@ function BotaoPS({
   );
 }
 
+// Botão direcional (D-Pad) — menor e quadrado
+function BotaoDir({
+  onClick, disabled, icon, label,
+}: {
+  onClick: () => void;
+  disabled?: boolean;
+  icon: React.ReactNode;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      className={cn(
+        "flex items-center justify-center w-11 h-11 rounded-lg transition-all shadow-sm",
+        "disabled:opacity-25 disabled:cursor-not-allowed disabled:shadow-none",
+        PS_BTN.dpad.cor,
+      )}
+      title={label}
+      aria-label={label}
+    >
+      <span className="w-5 h-5 flex items-center justify-center">{icon}</span>
+    </button>
+  );
+}
+
 export function GamepadControle({
-  onAcao, tarefaSelecionada, podeMover, className,
+  onAcao, tarefaSelecionada, podeMover, podeNavegar, temTarefas, className,
 }: GamepadControleProps) {
-  const analogicoDisabled = !tarefaSelecionada;
   const [tecladoVisivel, setTecladoVisivel] = useState(false);
 
   // some ao digitar: detecta focus em input/textarea/select
@@ -84,25 +118,42 @@ export function GamepadControle({
 
   if (tecladoVisivel) return null;
 
+  // Sem seleção → D-Pad navega (cima/baixo); esquerda/direita desabilitados.
+  // Com seleção → D-Pad move a tarefa (ações confirmadas).
+  const navCima    = tarefaSelecionada ? podeMover.cima    : (podeNavegar?.cima    ?? temTarefas);
+  const navBaixo   = tarefaSelecionada ? podeMover.baixo   : (podeNavegar?.baixo   ?? temTarefas);
+  const navEsquerda = tarefaSelecionada ? podeMover.esquerda : false;
+  const navDireita  = tarefaSelecionada ? podeMover.direita  : false;
+
   return (
     <div className={cn(
-      "fixed bottom-2 left-1/2 -translate-x-1/2 z-50",
-      "md:bottom-4 md:left-auto md:right-4 md:translate-x-0",
-      "flex items-end gap-4 p-3 rounded-2xl bg-slate-900/95 backdrop-blur-md shadow-2xl border border-slate-700",
+      // Mobile: full-width fixo no rodapé
+      "fixed bottom-0 inset-x-0 z-50",
+      // Desktop: compacto no canto inferior direito
+      "md:bottom-4 md:inset-x-auto md:right-4 md:left-auto md:w-auto",
+      "flex items-end gap-4 px-3 py-3",
+      "pb-[max(0.75rem,env(safe-area-inset-bottom))] md:pb-3",
+      "bg-slate-900/95 backdrop-blur-md shadow-2xl border-t border-slate-700 md:border md:rounded-2xl md:border-slate-700",
       className,
     )}>
-      <AnalogicoPS
-        onDirecao={(d) => onAcao(d)}
-        disabled={analogicoDisabled}
-        podeCima={podeMover.cima}
-        podeBaixo={podeMover.baixo}
-        podeEsquerda={podeMover.esquerda}
-        podeDireita={podeMover.direita}
-      />
+      {/* D-Pad (substitui a alavanca analógica) */}
+      <div className="grid grid-cols-3 grid-rows-3 gap-0.5 shrink-0">
+        <span />
+        <BotaoDir onClick={() => onAcao("cima")}    disabled={!navCima}    icon={<ChevronUp className="w-5 h-5" />}    label={tarefaSelecionada ? "Mover acima" : "Tarefa acima"} />
+        <span />
+        <BotaoDir onClick={() => onAcao("esquerda")} disabled={!navEsquerda} icon={<ChevronLeft className="w-5 h-5" />}  label="Promover (menos indentação)" />
+        <div className="w-11 h-11" />
+        <BotaoDir onClick={() => onAcao("direita")}  disabled={!navDireita}  icon={<ChevronRight className="w-5 h-5" />} label="Rebaixar (mais indentação)" />
+        <span />
+        <BotaoDir onClick={() => onAcao("baixo")}   disabled={!navBaixo}   icon={<ChevronDown className="w-5 h-5" />}  label={tarefaSelecionada ? "Mover abaixo" : "Tarefa abaixo"} />
+        <span />
+      </div>
 
+      {/* Botões de ação */}
       <div className="grid grid-cols-2 gap-2">
         <BotaoPS
           onClick={() => onAcao("toggle_selecionar")}
+          disabled={!temTarefas}
           icon={tarefaSelecionada ? <CheckCircle2 className="w-5 h-5" /> : <MousePointerClick className="w-5 h-5" />}
           label={tarefaSelecionada ? "Soltar" : "Selecionar"}
           subLabel={tarefaSelecionada ? "Soltar" : "Selecionar"}

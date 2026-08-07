@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button";
 import { GripVertical, Plus, ChevronDown, ChevronRight, ChevronLeft, Pencil, Trash2 } from "lucide-react";
 import type { Tarefa, Funcionario, StatusTarefa, Prioridade } from "@/types";
 import { InlineText, InlineDate, InlineSelect, InlineProgress } from "./InlineCells";
-import { JoystickMover } from "./JoystickMover";
 import { cn } from "@/lib/utils";
 
 const STATUS_LABEL: Record<StatusTarefa, string> = {
@@ -54,6 +53,7 @@ export interface TarefaRowProps {
   focoInlineTitulo?: boolean;
   podeMover: { cima: boolean; baixo: boolean; esquerda: boolean; direita: boolean };
   selecionada?: boolean;
+  focada?: boolean;
   onSelecionar?: () => void;
   onChange: (patch: Partial<Tarefa>) => Promise<void>;
   onPromote?: () => void;
@@ -69,7 +69,7 @@ export interface TarefaRowProps {
 export function TarefaRow({
   tarefa: t, nivel, ehUltimaFilha, trilhaConectores, funcMap, equipeMap, custoMO,
   planofechado, expandido, onToggleExpand, temFilhas, focoInlineTitulo, podeMover,
-  selecionada, onSelecionar,
+  selecionada, focada, onSelecionar,
   onChange, onPromote, onDemote, onMoverCima, onMoverBaixo, onAddSub, onEdit, onDelete, isOverlay,
 }: TarefaRowProps) {
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
@@ -125,20 +125,6 @@ export function TarefaRow({
     </button>
   ) : <span className="w-[18px]" />;
 
-  const joystick = !planofechado && (onPromote || onDemote || onMoverCima || onMoverBaixo) ? (
-    <JoystickMover
-      onCima={() => onMoverCima?.()}
-      onBaixo={() => onMoverBaixo?.()}
-      onEsquerda={() => onPromote?.()}
-      onDireita={() => onDemote?.()}
-      podeCima={podeMover.cima}
-      podeBaixo={podeMover.baixo}
-      podeEsquerda={podeMover.esquerda}
-      podeDireita={podeMover.direita}
-      className="opacity-0 group-hover:opacity-100 transition-opacity"
-    />
-  ) : null;
-
   const saveField = (campo: keyof Tarefa) => async (v: any) => {
     await onChange({ [campo]: v } as Partial<Tarefa>);
   };
@@ -151,7 +137,7 @@ export function TarefaRow({
         nivel > 0 && "bg-slate-50/40",
         t.status === "concluida" && "opacity-70",
         isOverlay && "shadow-2xl ring-2 ring-primary/40",
-        selecionada && "ring-2 ring-blue-500 bg-blue-50/60",
+        selecionada ? "ring-2 ring-blue-500 bg-blue-50/60" : focada && "ring-1 ring-blue-400/50 bg-blue-50/30",
       )}
       onClick={(e) => {
         if (isOverlay) return;
@@ -164,7 +150,6 @@ export function TarefaRow({
         <div className="flex items-center gap-1 group">
           {handle}
           {expandIcon}
-          {joystick}
           {nivel > 0 && <span className="flex items-center text-xs mr-0.5">{conectores}</span>}
           <span className={cn("inline-block w-2 h-2 rounded-full", PRIO_COLOR[t.prioridade])}
             title={`Prioridade ${PRIO_LABEL[t.prioridade]}`} />
